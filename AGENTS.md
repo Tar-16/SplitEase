@@ -39,3 +39,16 @@
 - Run both service/session tests and real UI navigation tests when changing authentication. Test duplicate accounts, invalid credentials, recreation, logout/back boundaries, account switching and restored missing identities. Record actual API/device and lint coverage.
 
 - Final Milestone 3 evidence is in `docs/milestone-3-verification.md`. Keep completed automated checks distinct from manual device coverage; the full docked-keyboard, API 24 and physical-device checks remain outstanding. Do not treat a resumed verification request as authorization to start a new milestone.
+## Codex development efficiency rules
+
+- Read AGENTS.md and relevant existing files first.
+- Inspect only files relevant to the current task.
+- Reuse existing code; avoid unnecessary rewrites.
+- Make sensible reversible decisions independently.
+- Do not browse the web unless necessary.
+- Run focused tests during development.
+- Run full verification once at milestone completion.
+- Do not repeatedly rerun passing tests without reason.
+- Keep final reports concise.
+- Never skip essential security, money, or data-integrity tests.
+- Stop after completing the requested milestone.
