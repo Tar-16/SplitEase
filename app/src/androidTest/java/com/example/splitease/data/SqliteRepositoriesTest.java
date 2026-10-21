@@ -1,0 +1,225 @@
+package com.example.splitease.data;
+
+import android.content.Context;
+import android.database.Cursor;
+import android.database.sqlite.*;
+import android.os.Looper;
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import com.example.splitease.domain.Rules;
+import com.example.splitease.model.*;
+import com.example.splitease.repository.*;
+import org.junit.*;
+import org.junit.runner.RunWith;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+import static org.junit.Assert.*;
+
+@RunWith(AndroidJUnit4.class)
+public class SqliteRepositoriesTest {
+    private Context context;
+    private String name;
+    private SqliteRepositories repo;
+    private ExecutorService callbacks;
+    private final String a="00000000-0000-0000-0000-000000000001";
+    private final String b="00000000-0000-0000-0000-000000000002";
+    private final String outsider="00000000-0000-0000-0000-000000000003";
+    private String group;
+    private interface Call<T> { void start(RepositoryCallback<T> callback); }
+    private <T> T await(Call<T> operation) throws Exception {
+        CompletableFuture<T> future=new CompletableFuture<>();
+        operation.start(new RepositoryCallback<T>() {
+            @Override public void onSuccess(T value) { future.complete(value); }
+            @Override public void onError(Exception error) { future.completeExceptionally(error); }
+        });
+        return future.get(30,TimeUnit.SECONDS);
+    }
+    private <T> T snapshot(ObservableQuery<T> query) throws Exception {
+        CompletableFuture<T> future=new CompletableFuture<>();
+        ObservableQuery.Subscription subscription=query.subscribe(callbacks,new ObservableQuery.Observer<T>() {
+            @Override public void onChanged(T value) { future.complete(value); }
+            @Override public void onError(Exception error) { future.completeExceptionally(error); }
+        });
+        try { return future.get(30,TimeUnit.SECONDS); } finally { subscription.close(); }
+    }
+    @Before public void setup() throws Exception {
+        context=ApplicationProvider.getApplicationContext(); name="test-"+UUID.randomUUID()+".db";
+        callbacks=Executors.newSingleThreadExecutor(r -> new Thread(r,"test-callback"));
+        repo=new SqliteRepositories(context,name);
+        await((RepositoryCallback<Boolean> c) -> repo.initialize(callbacks,c));
+    }
+    @After public void cleanup() { repo.close(); callbacks.shutdown(); /* Unique test files avoid races with asynchronous close. */ }
+    private void seed() throws Exception {
+        await((RepositoryCallback<User> c) -> repo.createUser(new User(a,"Alice","alice@example.com",null),"pass-one".toCharArray(),callbacks,c));
+        await((RepositoryCallback<User> c) -> repo.createUser(new User(b,"Bob","bob@example.com",null),"pass-two".toCharArray(),callbacks,c));
+        await((RepositoryCallback<User> c) -> repo.createUser(new User(outsider,"Other","other@example.com",null),"pass-three".toCharArray(),callbacks,c));
+        group=UUID.randomUUID().toString();
+        await((RepositoryCallback<Group> c) -> repo.createGroup(new Group(group,"Flat",Group.Type.FLAT,a,100),callbacks,c));
+        await((RepositoryCallback<Boolean> c) -> repo.addMember(a,group,b,101,callbacks,c));
+    }
+    private Expense expense(String id,long amount) {
+        List<ExpenseSplit> splits=new ArrayList<>();
+        for (Map.Entry<String,Long> entry : Rules.equalSplit(amount,Arrays.asList(a,b)).entrySet()) splits.add(new ExpenseSplit(id,entry.getKey(),entry.getValue()));
+        return new Expense(id,group,"Groceries",amount,a,a,"Food",200,splits);
+    }
+    private long count(SQLiteDatabase db,String table) {
+        try(Cursor c=db.rawQuery("SELECT COUNT(*) FROM "+table,null)) { c.moveToFirst(); return c.getLong(0); }
+    }
+    @Test public void credentialsCrudConstraintsAndReopen() throws Exception {
+        seed();
+        assertTrue(await((RepositoryCallback<Boolean> c) -> repo.verifyPassword(a,"pass-one".toCharArray(),callbacks,c)));
+        assertFalse(await((RepositoryCallback<Boolean> c) -> repo.verifyPassword(a,"wrong".toCharArray(),callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<User> c) -> repo.createUser(new User(UUID.randomUUID().toString(),"ALICE","different@example.com",null),"password".toCharArray(),callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<User> c) -> repo.createUser(new User(UUID.randomUUID().toString(),"different","ALICE@EXAMPLE.COM",null),"password".toCharArray(),callbacks,c)));
+        await((RepositoryCallback<User> c) -> repo.updateUser(new User(a,"Alice","alice@example.com","alice@upi"),callbacks,c));
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,name)) {
+            SQLiteDatabase db=helper.getWritableDatabase();
+            assertEquals(3,count(db,"users"));
+            try(Cursor c=db.rawQuery("SELECT password_hash,password_salt,password_algorithm FROM users WHERE id=?",new String[]{a})) {
+                assertTrue(c.moveToFirst()); assertEquals(32,c.getBlob(0).length); assertEquals(16,c.getBlob(1).length); assertEquals("argon2id-v19",c.getString(2));
+            }
+            assertThrows(SQLiteConstraintException.class, () -> db.execSQL("INSERT INTO group_members VALUES(?,?,'ACTIVE',0,NULL)",new Object[]{group,UUID.randomUUID().toString()}));
+            assertThrows(SQLiteConstraintException.class, () -> db.execSQL("INSERT INTO group_members VALUES(?,?,'ACTIVE',0,NULL)",new Object[]{group,a}));
+        }
+        repo.close(); repo=new SqliteRepositories(context,name);
+        User reopened=await((RepositoryCallback<User> c) -> repo.getUser(a,callbacks,c));
+        assertEquals("alice@upi",reopened.upiId);
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.deleteUser(a,callbacks,c)));
+        assertTrue(await((RepositoryCallback<Boolean> c) -> repo.deleteUser(outsider,callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<User> c) -> repo.getUser(outsider,callbacks,c)));
+    }
+    @Test public void expensesSettlementsMembershipAndPermissions() throws Exception {
+        seed(); String expenseId=UUID.randomUUID().toString();
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(expenseId,101),callbacks,c));
+        assertEquals(Long.valueOf(-50),snapshot(repo.observeBalances(group)).get(b));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(b,group,300,callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(outsider,expenseId,callbacks,c)));
+        String settlementId=UUID.randomUUID().toString();
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(b,new Settlement(settlementId,group,b,a,20,300),callbacks,c));
+        assertEquals(Long.valueOf(-30),snapshot(repo.observeBalances(group)).get(b));
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,new Settlement(settlementId,group,b,a,50,400),callbacks,c));
+        assertEquals(1,snapshot(repo.observeSettlements(group)).size());
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,new Settlement(settlementId,group,a,b,50,400),callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(a,group,500,callbacks,c)));
+        await((RepositoryCallback<Boolean> c) -> repo.transferAdmin(a,group,b,callbacks,c));
+        await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(a,group,500,callbacks,c));
+        List<GroupMember> members=snapshot(repo.observeMembers(group));
+        assertEquals(GroupMember.Status.LEFT,members.get(0).status); assertEquals(Long.valueOf(500),members.get(0).leftAt);
+        assertEquals(a,snapshot(repo.observeExpenses(group)).get(0).payerId);
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(b,expense(expenseId,101),callbacks,c));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(a,expenseId,callbacks,c)));
+        repo.close(); repo=new SqliteRepositories(context,name);
+        assertEquals(101,snapshot(repo.observeExpenses(group)).get(0).amountPaise);
+        assertEquals(50,snapshot(repo.observeSettlements(group)).get(0).amountPaise);
+        await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(b,expenseId,callbacks,c));
+        await((RepositoryCallback<Boolean> c) -> repo.deleteSettlement(b,settlementId,callbacks,c));
+        assertTrue(snapshot(repo.observeExpenses(group)).isEmpty());
+    }
+    @Test public void expenseReplacementRollsBackAfterMidTransactionFailure() throws Exception {
+        seed(); String id=UUID.randomUUID().toString();
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(id,100),callbacks,c));
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,name)) {
+            helper.getWritableDatabase().execSQL("CREATE TRIGGER fail_split BEFORE INSERT ON expense_splits WHEN NEW.user_id='"+b+"' BEGIN SELECT RAISE(ABORT,'injected failure'); END");
+            assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Expense> c) -> repo.saveExpense(b,expense(id,200),callbacks,c)));
+            Expense old=snapshot(repo.observeExpenses(group)).get(0);
+            assertEquals(100,old.amountPaise); assertEquals(2,old.splits.size()); assertEquals(50,old.splits.get(0).sharePaise);
+            assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(UUID.randomUUID().toString(),200),callbacks,c)));
+            assertEquals(1,count(helper.getWritableDatabase(),"expenses"));
+        }
+    }
+    @Test public void recurringSnapshotsRemainSeparateAndUnique() throws Exception {
+        seed(); String id=UUID.randomUUID().toString();
+        RecurringBill bill=new RecurringBill(id,group,"WiFi",99900,31,Arrays.asList(a,b),a,3,true);
+        await((RepositoryCallback<RecurringBill> c) -> repo.saveBill(a,bill,callbacks,c));
+        RecurringBillCycle first=await((RepositoryCallback<RecurringBillCycle> c) -> repo.createCycle(b,id,2026,2,callbacks,c));
+        assertFalse(first.contributions.get(0).paid);
+        await((RepositoryCallback<Boolean> c) -> repo.setContributionPaid(b,first.id,a,true,callbacks,c));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<RecurringBillCycle> c) -> repo.createCycle(a,id,2026,2,callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.setContributionPaid(outsider,first.id,a,false,callbacks,c)));
+        RecurringBill changed=new RecurringBill(id,group,"WiFi new",120000,15,Arrays.asList(b),b,5,true);
+        await((RepositoryCallback<RecurringBill> c) -> repo.saveBill(b,changed,callbacks,c));
+        RecurringBillCycle second=await((RepositoryCallback<RecurringBillCycle> c) -> repo.createCycle(a,id,2026,3,callbacks,c));
+        assertEquals(120000,second.amountPaise); assertEquals(1,second.contributions.size()); assertFalse(second.contributions.get(0).paid);
+        repo.close(); repo=new SqliteRepositories(context,name);
+        List<RecurringBillCycle> cycles=snapshot(repo.observeCycles(id));
+        assertEquals(2,cycles.size()); assertEquals(99900,cycles.get(0).amountPaise); assertEquals(a,cycles.get(0).handlerId);
+        assertEquals(49950,cycles.get(0).contributions.get(0).sharePaise); assertTrue(cycles.get(0).contributions.get(0).paid);
+        assertTrue(snapshot(repo.observeExpenses(group)).isEmpty()); assertTrue(snapshot(repo.observeSettlements(group)).isEmpty()); assertTrue(snapshot(repo.observeBalances(group)).isEmpty());
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.deleteBill(a,id,callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.deleteGroup(a,group,callbacks,c)));
+        await((RepositoryCallback<Boolean> c) -> repo.setContributionPaid(b,first.id,a,false,callbacks,c));
+        assertFalse(snapshot(repo.observeCycles(id)).get(0).contributions.get(0).paid);
+    }
+    @Test public void migrationPreservesCoreDataAndRejectsDowngrade() throws Exception {
+        String migrationName="migration-"+UUID.randomUUID()+".db";
+        try(SplitEaseDatabase old=new SplitEaseDatabase(context,migrationName,1)) {
+            SQLiteDatabase db=old.getWritableDatabase();
+            db.execSQL("INSERT INTO users VALUES(?,?,?,NULL,?,?,?,2,19456,1)",new Object[]{a,"alice","alice@example.com",new byte[32],new byte[16],"argon2id-v19"});
+            db.execSQL("INSERT INTO groups VALUES(?,?,'FLAT',?,100)",new Object[]{UUID.randomUUID().toString(),"Preserved",a});
+            assertEquals(1,db.getVersion());
+            assertThrows(SQLiteException.class, () -> count(db,"recurring_bills"));
+        }
+        try(SplitEaseDatabase upgraded=new SplitEaseDatabase(context,migrationName)) {
+            SQLiteDatabase db=upgraded.getWritableDatabase();
+            assertEquals(3,db.getVersion()); assertEquals(1,count(db,"users")); assertEquals(1,count(db,"groups")); assertEquals(0,count(db,"recurring_cycles"));
+            try(Cursor creator=db.rawQuery("SELECT creator_id FROM groups",null)) { assertTrue(creator.moveToFirst()); assertEquals(a,creator.getString(0)); }
+            try(Cursor c=db.rawQuery("PRAGMA foreign_key_check",null)) { assertEquals(0,c.getCount()); }
+        }
+        try(SplitEaseDatabase downgrade=new SplitEaseDatabase(context,migrationName,1)) {
+            assertThrows(IllegalStateException.class,downgrade::getWritableDatabase);
+        }
+        try(SplitEaseDatabase again=new SplitEaseDatabase(context,migrationName)) { assertEquals(1,count(again.getWritableDatabase(),"users")); }
+    }
+    @Test public void groupCrudAndRejoiningPreserveMembershipIdentity() throws Exception {
+        seed();
+        Group changed=await((RepositoryCallback<Group> c) -> repo.updateGroup(b,new Group(group,"Trip",Group.Type.TRIP,a,100),callbacks,c));
+        assertEquals("Trip",changed.name);
+        await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(b,group,300,callbacks,c));
+        assertTrue(snapshot(repo.observeGroups(b)).isEmpty());
+        await((RepositoryCallback<Boolean> c) -> repo.addMember(a,group,b,400,callbacks,c));
+        List<GroupMember> members=snapshot(repo.observeMembers(group));
+        assertEquals(2,members.size()); assertEquals(101,members.get(1).joinedAt); assertNull(members.get(1).leftAt);
+        await((RepositoryCallback<Boolean> c) -> repo.transferAdmin(a,group,b,callbacks,c));
+        Group transferred=snapshot(repo.observeGroups(b)).get(0);
+        assertEquals(a,transferred.creatorId); assertEquals(b,transferred.adminId);
+        await((RepositoryCallback<Boolean> c) -> repo.deleteGroup(b,group,callbacks,c));
+        assertTrue(snapshot(repo.observeGroups(a)).isEmpty()); assertTrue(snapshot(repo.observeMembers(group)).isEmpty());
+    }
+    @Test public void observersReceiveCommittedSnapshotsAndNoFailedWriteNotification() throws Exception {
+        seed();
+        BlockingQueue<List<Expense>> updates=new LinkedBlockingQueue<>();
+        ObservableQuery.Subscription subscription=repo.observeExpenses(group).subscribe(callbacks,new ObservableQuery.Observer<List<Expense>>() {
+            @Override public void onChanged(List<Expense> value) { updates.add(value); }
+            @Override public void onError(Exception error) { fail(error.toString()); }
+        });
+        try {
+            assertTrue(updates.poll(10,TimeUnit.SECONDS).isEmpty());
+            String id=UUID.randomUUID().toString();
+            await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(id,101),callbacks,c));
+            List<Expense> next=updates.poll(10,TimeUnit.SECONDS);
+            assertNotNull(next); assertEquals(1,next.size()); assertEquals(2,next.get(0).splits.size());
+            Expense invalid=new Expense(id,group,"Bad",101,a,a,"Food",200,Arrays.asList(new ExpenseSplit(id,a,50),new ExpenseSplit(id,b,50)));
+            assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Expense> c) -> repo.saveExpense(b,invalid,callbacks,c)));
+            // Awaited callback is on the same serial delivery executor as notifications.
+            assertTrue(updates.isEmpty());
+            assertEquals(101,snapshot(repo.observeExpenses(group)).get(0).amountPaise);
+        } finally { subscription.close(); }
+    }
+    @Test public void callbacksUseRequestedThreadAndCancelledObserversDropQueuedEvents() throws Exception {
+        CompletableFuture<String> thread=new CompletableFuture<>();
+        repo.initialize(callbacks,new RepositoryCallback<Boolean>() {
+            @Override public void onSuccess(Boolean value) { assertNotEquals(Looper.getMainLooper().getThread(),Thread.currentThread()); thread.complete(Thread.currentThread().getName()); }
+            @Override public void onError(Exception error) { thread.completeExceptionally(error); }
+        });
+        assertEquals("test-callback",thread.get(10,TimeUnit.SECONDS));
+        BlockingQueue<Runnable> delivery=new LinkedBlockingQueue<>(); AtomicInteger received=new AtomicInteger();
+        ObservableQuery.Subscription subscription=repo.observeGroups(a).subscribe(delivery::add,new ObservableQuery.Observer<List<Group>>() {
+            @Override public void onChanged(List<Group> value) { received.incrementAndGet(); }
+            @Override public void onError(Exception error) { received.incrementAndGet(); }
+        });
+        Runnable queued=delivery.poll(10,TimeUnit.SECONDS); assertNotNull(queued);
+        subscription.close(); queued.run(); assertEquals(0,received.get());
+        repo.close(); assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.initialize(callbacks,c)));
+    }
+}

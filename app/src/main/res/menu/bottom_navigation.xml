@@ -1,0 +1,5 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@id/groups" android:icon="@drawable/ic_groups" android:title="@string/tab_groups" />
+    <item android:id="@id/recurring" android:icon="@drawable/ic_recurring" android:title="@string/tab_recurring" />
+    <item android:id="@id/profile" android:icon="@drawable/ic_profile" android:title="@string/tab_profile" />
+</menu>

@@ -1,0 +1,14 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+ android:layout_width="match_parent" android:layout_height="match_parent">
+ <LinearLayout android:id="@+id/main_content" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:visibility="invisible">
+    <androidx.fragment.app.FragmentContainerView android:id="@+id/nav_host" android:name="androidx.navigation.fragment.NavHostFragment"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" app:defaultNavHost="true" />
+    <com.google.android.material.bottomnavigation.BottomNavigationView android:id="@+id/bottom_navigation" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:visibility="gone" android:background="@color/surface" app:labelVisibilityMode="labeled" app:itemIconTint="@color/navigation_item" app:itemTextColor="@color/navigation_item" app:menu="@menu/bottom_navigation" />
+ </LinearLayout>
+ <LinearLayout android:id="@+id/startup" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:orientation="vertical" android:padding="32dp">
+    <ProgressBar android:id="@+id/startup_progress" android:layout_width="48dp" android:layout_height="48dp" />
+    <TextView android:id="@+id/startup_message" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:gravity="center" android:text="@string/restoring_session" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+    <com.google.android.material.button.MaterialButton android:id="@+id/retry" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/retry" android:visibility="gone" />
+ </LinearLayout>
+</FrameLayout>

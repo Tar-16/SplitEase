@@ -1,0 +1,38 @@
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="24dp">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/eyebrow" android:textColor="@color/primary"
+            android:textSize="12sp" android:letterSpacing="0.18" android:fontFamily="sans-serif-medium" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" android:text="@string/tab_groups" android:accessibilityHeading="true"
+            android:textAppearance="@style/TextAppearance.SplitEase.Title" />
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:text="@string/groups_subtitle"
+            android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+        <com.google.android.material.card.MaterialCardView style="@style/Widget.SplitEase.Card"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="32dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="24dp" android:gravity="center_horizontal">
+                <androidx.appcompat.widget.AppCompatImageView android:layout_width="72dp" android:layout_height="72dp"
+                    android:layout_marginTop="16dp" android:padding="20dp" android:importantForAccessibility="no"
+                    android:background="@drawable/icon_background" app:srcCompat="@drawable/ic_groups" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp" android:text="@string/groups_title" android:gravity="center"
+                    android:textAppearance="@style/TextAppearance.SplitEase.CardTitle" />
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp" android:text="@string/groups_body" android:gravity="center"
+                    android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp" android:layout_marginBottom="16dp"
+                    android:text="@string/preview" android:textColor="@color/primary" android:textSize="11sp"
+                    android:letterSpacing="0.12" android:fontFamily="sans-serif-medium" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="24dp" android:text="@string/groups_note" android:gravity="center"
+            android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

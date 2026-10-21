@@ -1,0 +1,9 @@
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/main_nav_graph"
+    app:startDestination="@id/login">
+    <fragment android:id="@+id/login" android:name="com.example.splitease.ui.auth.LoginFragment" android:label="@string/login_action" />
+    <fragment android:id="@+id/signup" android:name="com.example.splitease.ui.auth.SignupFragment" android:label="@string/signup_action" />
+    <fragment android:id="@+id/groups" android:name="com.example.splitease.ui.groups.GroupsFragment" android:label="@string/tab_groups" />
+    <fragment android:id="@+id/recurring" android:name="com.example.splitease.ui.recurring.RecurringFragment" android:label="@string/tab_recurring" />
+    <fragment android:id="@+id/profile" android:name="com.example.splitease.ui.profile.ProfileFragment" android:label="@string/tab_profile" />
+</navigation>

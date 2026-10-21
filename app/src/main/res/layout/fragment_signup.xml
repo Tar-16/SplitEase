@@ -1,0 +1,44 @@
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+ android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+ <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp" android:focusableInTouchMode="true">
+ <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/eyebrow" android:textColor="@color/primary" android:letterSpacing="0.18" android:textSize="12sp" android:fontFamily="sans-serif-medium" />
+ <TextView android:id="@+id/heading" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/signup_title" android:textAppearance="@style/TextAppearance.SplitEase.Title" /><TextView android:id="@+id/subtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/signup_subtitle" android:textAppearance="@style/TextAppearance.SplitEase.Body" /><com.google.android.material.card.MaterialCardView style="@style/Widget.SplitEase.Card" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp">
+ <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp"><com.google.android.material.textfield.TextInputLayout android:id="@+id/username_layout" style="@style/Widget.SplitEase.Input"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp"
+    android:hint="@string/username_label" >
+    <com.google.android.material.textfield.TextInputEditText android:id="@+id/username"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+        android:inputType="text" android:imeOptions="actionNext" android:maxLines="1"
+        
+        android:autofillHints="username" />
+</com.google.android.material.textfield.TextInputLayout><com.google.android.material.textfield.TextInputLayout android:id="@+id/email_layout" style="@style/Widget.SplitEase.Input"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp"
+    android:hint="@string/email_label" >
+    <com.google.android.material.textfield.TextInputEditText android:id="@+id/email"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+        android:inputType="textEmailAddress" android:imeOptions="actionNext" android:maxLines="1"
+        
+        android:autofillHints="emailAddress" />
+</com.google.android.material.textfield.TextInputLayout><com.google.android.material.textfield.TextInputLayout android:id="@+id/password_layout" style="@style/Widget.SplitEase.Input"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp"
+    android:hint="@string/password_label" app:endIconMode="password_toggle">
+    <com.google.android.material.textfield.TextInputEditText android:id="@+id/password"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+        android:inputType="textPassword" android:imeOptions="actionNext" android:maxLines="1"
+        android:saveEnabled="false"
+        android:autofillHints="newPassword" />
+</com.google.android.material.textfield.TextInputLayout><TextView android:id="@+id/rules_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/password_rules_title" android:textAppearance="@style/TextAppearance.SplitEase.Body" /><TextView android:id="@+id/check_length" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/password_length" android:textAppearance="@style/TextAppearance.SplitEase.Body" android:textSize="13sp"/><TextView android:id="@+id/check_upper" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/password_upper" android:textAppearance="@style/TextAppearance.SplitEase.Body" android:textSize="13sp"/><TextView android:id="@+id/check_lower" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/password_lower" android:textAppearance="@style/TextAppearance.SplitEase.Body" android:textSize="13sp"/><TextView android:id="@+id/check_number" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/password_number" android:textAppearance="@style/TextAppearance.SplitEase.Body" android:textSize="13sp"/><TextView android:id="@+id/check_special" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/password_special" android:textAppearance="@style/TextAppearance.SplitEase.Body" android:textSize="13sp"/><com.google.android.material.textfield.TextInputLayout android:id="@+id/confirm_password_layout" style="@style/Widget.SplitEase.Input"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp"
+    android:hint="@string/confirm_password_label" app:endIconMode="password_toggle">
+    <com.google.android.material.textfield.TextInputEditText android:id="@+id/confirm_password"
+        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+        android:inputType="textPassword" android:imeOptions="actionDone" android:maxLines="1"
+        android:saveEnabled="false"
+        android:autofillHints="newPassword" />
+</com.google.android.material.textfield.TextInputLayout><TextView android:id="@+id/error" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/auth_storage" android:textAppearance="@style/TextAppearance.SplitEase.Body" android:textColor="?attr/colorError" android:visibility="gone" android:accessibilityLiveRegion="polite"/><com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/progress" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:indeterminate="true" android:contentDescription="@string/working" android:visibility="gone" /><com.google.android.material.button.MaterialButton android:id="@+id/submit" 
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+    android:layout_marginTop="16dp" android:text="@string/signup_action" app:cornerRadius="16dp" /></LinearLayout></com.google.android.material.card.MaterialCardView><com.google.android.material.button.MaterialButton android:id="@+id/switch_screen" style="@style/Widget.Material3.Button.TextButton"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+    android:layout_marginTop="16dp" android:text="@string/to_login" app:cornerRadius="16dp" /><TextView android:id="@+id/local_note" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/local_account_note" android:textAppearance="@style/TextAppearance.SplitEase.Body" android:gravity="center" android:textSize="13sp"/>
+ </LinearLayout>
+</androidx.core.widget.NestedScrollView>
