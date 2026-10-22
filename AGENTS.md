@@ -35,7 +35,7 @@
 - The Activity owns session-driven navigation. Keep its startup gate, clear tab/back-stack state when identity changes or logout succeeds, and never expose a restored authenticated destination before session validation. Preserve same-account Activity recreation and the three home tabs.
 - Use lifecycle-aware AuthViewModel LiveData and viewLifecycleOwner observers. Fragments may only bind state and forward actions. No direct repository/persistence/crypto calls from authentication/profile Fragments. Derive the profile user ID inside AuthService.
 - Prevent duplicate submissions; logout invalidates in-flight authentication work. Preserve safe callback threading and subscription cancellation.
-- Optional UPI IDs are profile metadata only: never claim verification or initiate payment. Recurring remains a placeholder; Groups is implemented in Milestone 4. Expenses/Balances UI is implemented in Milestone 5; settlement/payment flows require their own milestone.
+- Optional UPI IDs are unverified profile metadata. Milestone 6 permits explicit UPI handoff only; never claim verification or payment confirmation. Recurring remains a placeholder; Groups is implemented in Milestone 4. Expenses/Balances UI is implemented in Milestone 5; settlement/payment flows require their own milestone.
 - Run both service/session tests and real UI navigation tests when changing authentication. Test duplicate accounts, invalid credentials, recreation, logout/back boundaries, account switching and restored missing identities. Record actual API/device and lint coverage.
 
 - Final Milestone 3 evidence is in `docs/milestone-3-verification.md`. Keep completed automated checks distinct from manual device coverage; the full docked-keyboard, API 24 and physical-device checks remain outstanding. Do not treat a resumed verification request as authorization to start a new milestone.
@@ -58,7 +58,7 @@
 - Reuse GroupsViewModel, GroupRepository, MemberIdentity and GroupDetails. Actor IDs originate only from AuthService; fragments supply actions/selected targets, never the acting identity.
 - Use the atomic createGroup(actor, group, memberIds, ...) operation for UI creation; never assemble group creation from separate membership writes. The creator is automatically the initial admin. Reject duplicate selections; keep database uniqueness/FKs authoritative.
 - Only the current admin adds/rejoins members or transfers admin to another current member. Check permissions inside the repository write transaction. Leaving is a status change, requires a zero derived balance, and cannot be performed by the current admin.
-- Use authorized observeGroupSummaries/observeGroupDetails for screens. Detail observations recheck membership on every emission. Username discovery is exact/normalized and returns only public UUID/username; never show account email or UPI to other members.
+- Use authorized observeGroupSummaries/observeGroupDetails for screens. Detail observations recheck membership on every emission. Username discovery is exact/normalized and returns only public UUID/username; never show account emails. Only the authorized settlement snapshot may expose suggested recipients’ UPI IDs for payment.
 - Keep group drafts in SavedStateHandle, close subscriptions on stop, and discard stale results/account state. Preserve the Activity’s authenticated-destination guard; bottom tabs appear only at the three root destinations.
 - Show real creation date (no last-activity column exists). Do not fabricate expense totals/balances. Milestone 5 uses actual authorized accounting snapshots. No schema change was needed; version remains 3.
 - Keep confirmation dialogs for immediate member additions, admin transfers and leaving. Group verification evidence is recorded in docs/milestone-4-verification.md.
@@ -73,3 +73,11 @@
 - Balance displays include recorded settlements and referenced historical identities, but never recurring contributions. Show net owed/owing/settled amounts without inventing debtor-to-creditor pairs. Total expenses means spending, not outstanding debt.
 - Keep expense drafts session-bound and lifecycle-aware. Close observations on stop, suppress stale callbacks on account change and require confirmation for deletion. The expense destination is authenticated and has no bottom tabs.
 - No settlement entry, payment/UPI execution, recommendations, OCR, recurring UI or Firebase was authorized in Milestone 5. Verification evidence belongs in docs/milestone-5-verification.md.
+
+## Milestone 6 settlement rules
+
+- Reuse SettlementCalculator, SettlementRepository and session-bound SettlementsViewModel. Greedy largest-balance matching uses UUID tie breaks and checked integer paise; suggestions are not completed payments or a proof of minimum transfer count. Recurring data never participates.
+- New records require a current member who is payer or payee and cannot exceed the current suggested pair amount. Historical parties remain valid. Any current member may correct amount/date; group and parties are immutable. Exclude the old record to calculate pair debt/credit capacity; edit ceiling is max(old amount, capacity), allowing retention/reduction after underlying expenses change.
+- Duplicate heuristic: same group, payer, payee, amount and UTC calendar date, excluding the edited record. Require explicit acknowledgement; recheck permissions and amount limits transactionally even after acknowledgement.
+- UPI handoff uses the selected current suggestion amount, encoded pa/pn/am/cu/tn fields and a system chooser. Missing apps must be safe. Never infer success from returning/cancelling or automatically record a payment. Manual recording always remains separate, with confirmation.
+- No schema change or new dependencies for M6. Preserve records, lifecycle cancellation and authenticated navigation. Evidence belongs in docs/milestone-6-verification.md. Stop after M6; recurring UI, OCR and Firebase remain outside scope.

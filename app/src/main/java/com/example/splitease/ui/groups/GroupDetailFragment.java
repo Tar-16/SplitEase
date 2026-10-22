@@ -32,6 +32,10 @@ public final class GroupDetailFragment extends GroupScreenFragment {
             @Override public void onTabReselected(TabLayout.Tab tab) {}
         });
         binding.tabs.selectTab(binding.tabs.getTabAt(selectedTab));
+        binding.settleUp.setOnClickListener(v -> {
+            Bundle args=new Bundle(); args.putString("groupId",requireArguments().getString("groupId"));
+            NavHostFragment.findNavController(this).navigate(R.id.settlements_screen,args);
+        });
         binding.addExpense.setOnClickListener(v -> openExpense(null));
         binding.leave.setOnClickListener(v -> confirm(getString(R.string.group_leave_confirm),model::leave));
         model.state().observe(getViewLifecycleOwner(),state -> {

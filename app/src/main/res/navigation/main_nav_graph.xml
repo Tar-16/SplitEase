@@ -14,4 +14,5 @@
         <argument android:name="groupId" app:argType="string" />
         <argument android:name="expenseId" app:argType="string" app:nullable="true" android:defaultValue="@null" />
     </fragment>
+    <fragment android:id="@+id/settlements_screen" android:name="com.example.splitease.ui.settlements.SettlementsFragment" android:label="@string/settle_up"><argument android:name="groupId" app:argType="string" /></fragment>
 </navigation>

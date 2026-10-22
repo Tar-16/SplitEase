@@ -1,0 +1,31 @@
+<resources>
+<string name="settle_up">Settle Up</string>
+<string name="settlement_intro">Suggested transfers simplify net balances using a deterministic greedy method. They are not completed payments and are not guaranteed to use the fewest possible transfers.</string>
+<string name="settlement_suggestions">Suggested transfers</string>
+<string name="settlement_records">Recorded settlements</string>
+<string name="settlement_empty">No suggested transfers. Everyone is settled.</string>
+<string name="settlement_no_records">No payments recorded yet.</string>
+<string name="settlement_parties">%1$s → %2$s</string>
+<string name="settlement_suggested_amount">Suggested: %1$s</string>
+<string name="settlement_recorded_amount">Recorded: %1$s · %2$s</string>
+<string name="settlement_view">View payment details</string>
+<string name="settlement_edit">Edit recorded settlement</string>
+<string name="settlement_edit_note">Correction overwrites amount/date without edit history. Parties cannot change. Retain/reduce the recorded amount; increases must fit this pair’s balance capacity with the old record excluded.</string>
+<string name="settlement_record_amount">Amount actually paid (INR)</string>
+<string name="settlement_limit">Maximum allowed: %1$s</string>
+<string name="settlement_record">Already paid? Record it</string>
+<string name="settlement_save">Save correction</string>
+<string name="settlement_confirm">Record only a payment you have independently confirmed. Suggested payments and returning from a UPI app do not prove that money was transferred.</string>
+<string name="settlement_duplicate">Possible duplicate: the same payer, payee and amount already appear on this UTC date. Record or save anyway?</string>
+<string name="settlement_proceed">Proceed anyway</string>
+<string name="settlement_party_only">Only the payer or payee, while a current group member, can record this transfer.</string>
+<string name="settlement_error">Unable to load settlements. Check group membership and try again.</string>
+<string name="settlement_invalid">Enter a positive amount within the displayed limit and a valid date. Balances or permissions may have changed; refresh and try again.</string>
+<string name="upi_address">Recipient UPI ID (unverified): %1$s</string>
+<string name="upi_missing">Recipient has no UPI ID. You can still record an independently confirmed payment.</string>
+<string name="upi_pay">Pay suggested %1$s using UPI</string>
+<string name="upi_chooser">Choose a UPI app</string>
+<string name="upi_unavailable">No compatible UPI app or valid recipient UPI ID is available. You can still record an independently confirmed payment.</string>
+<string name="upi_notice">UPI opens with the full suggested amount shown above. Changing the record amount does not change that request. Returning or cancelling never records a payment automatically.</string>
+<string name="settlement_date">Payment date: %1$s</string>
+</resources>

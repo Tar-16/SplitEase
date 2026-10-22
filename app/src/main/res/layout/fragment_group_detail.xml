@@ -28,6 +28,7 @@
                     <LinearLayout android:id="@+id/expense_list" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
                 </LinearLayout>
                 <LinearLayout android:id="@+id/balances_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                    <com.google.android.material.button.MaterialButton android:id="@+id/settle_up" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settle_up" android:layout_marginTop="12dp" />
                     <TextView android:id="@+id/balance_explanation" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/balance_explanation" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
                     <LinearLayout android:id="@+id/balance_list" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
                 </LinearLayout>

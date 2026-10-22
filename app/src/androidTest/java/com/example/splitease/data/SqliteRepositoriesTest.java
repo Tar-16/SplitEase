@@ -182,6 +182,49 @@ public class SqliteRepositoriesTest {
         await((RepositoryCallback<Expense> c) -> repo.saveExpense(b,extra,callbacks,c));
         assertEquals(1,snapshot(repo.observeGroupDetails(b,group)).totalExpenses);
     }
+    @Test public void settlementsEnforcePartiesDuplicatesAndCurrentSuggestionCaps() throws Exception {
+        seed(); await((RepositoryCallback<Boolean> c) -> repo.addMember(a,group,outsider,200,callbacks,c));
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(UUID.randomUUID().toString(),200),callbacks,c));
+        Settlement first=new Settlement(UUID.randomUUID().toString(),group,b,a,20,300);
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(outsider,first,callbacks,c)));
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(b,new Settlement(UUID.randomUUID().toString(),group,b,a,101,300),callbacks,c)));
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(b,first,callbacks,c));
+        assertEquals(80,snapshot(repo.observeSettlementDetails(a,group)).suggestions.get(0).amountPaise);
+        Settlement second=new Settlement(UUID.randomUUID().toString(),group,b,a,20,301);
+        ExecutionException duplicate=assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,second,callbacks,c)));
+        assertTrue(duplicate.getCause() instanceof DuplicateSettlementException);
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,second,true,callbacks,c));
+        assertEquals(60,snapshot(repo.observeSettlementDetails(a,group)).suggestions.get(0).amountPaise);
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(outsider,new Settlement(first.id,group,b,a,30,86400000),callbacks,c));
+        assertEquals(50,snapshot(repo.observeSettlementDetails(a,group)).suggestions.get(0).amountPaise);
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,new Settlement(first.id,group,a,b,30,86400000),callbacks,c)));
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,new Settlement(first.id,group,b,a,81,86400000),callbacks,c)));
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,new Settlement(UUID.randomUUID().toString(),group,b,a,50,400),callbacks,c));
+        assertTrue(snapshot(repo.observeSettlementDetails(a,group)).suggestions.isEmpty());
+        assertEquals(3,snapshot(repo.observeSettlementDetails(b,group)).records.size());
+    }
+    @Test public void settlementHistoryCorrectionsAndUpiProjectionRemainScoped() throws Exception {
+        seed(); String expenseId=UUID.randomUUID().toString();
+        await((RepositoryCallback<User> c) -> repo.updateUser(new User(a,"alice","alice@example.com","alice@upi"),callbacks,c));
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(expenseId,100),callbacks,c));
+        assertEquals("alice@upi",snapshot(repo.observeSettlementDetails(b,group)).recipientUpi.get(a));
+        assertThrows(ExecutionException.class,() -> snapshot(repo.observeSettlementDetails(outsider,group)));
+        Settlement old=new Settlement(UUID.randomUUID().toString(),group,b,a,50,300);
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,old,callbacks,c));
+        await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(b,group,400,callbacks,c));
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(expenseId,200),callbacks,c));
+        Settlement historical=new Settlement(UUID.randomUUID().toString(),group,b,a,50,86400000);
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,historical,callbacks,c));
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(b,new Settlement(old.id,group,b,a,20,500),callbacks,c)));
+        await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(a,expenseId,callbacks,c));
+        // After underlying expense deletion the original amount can still be retained/reduced for correction.
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(a,new Settlement(old.id,group,b,a,40,500),callbacks,c));
+        repo.close(); repo=new SqliteRepositories(context,name);
+        SettlementDetails reopened=snapshot(repo.observeSettlementDetails(a,group));
+        assertEquals(2,reopened.records.size()); assertEquals("bob",reopened.group.names.get(b));
+        assertEquals(Long.valueOf(90),reopened.group.balances.get(b));
+        assertEquals(b,reopened.suggestions.get(0).payeeId);
+    }
     @Test public void credentialsCrudConstraintsAndReopen() throws Exception {
         seed();
         assertTrue(await((RepositoryCallback<Boolean> c) -> repo.verifyPassword(a,"pass-one".toCharArray(),callbacks,c)));

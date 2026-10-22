@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteConstraintException;
 import com.example.splitease.domain.AccountValidation;
 import com.example.splitease.domain.Balances;
+import com.example.splitease.domain.SettlementCalculator;
 import com.example.splitease.domain.ExpenseAmounts;
 import com.example.splitease.domain.Rules;
 import com.example.splitease.model.*;
@@ -350,18 +351,41 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
     private Settlement settlement(String id) { return one("SELECT * FROM settlements WHERE id=?",this::settlement,Rules.id(id)); }
     private List<Settlement> settlements(String groupId) { return query("SELECT * FROM settlements WHERE group_id=? ORDER BY settlement_date,id",this::settlement,Rules.id(groupId)); }
     @Override public ObservableQuery<List<Settlement>> observeSettlements(String groupId) { return observe(() -> settlements(groupId)); }
+    @Override public ObservableQuery<SettlementDetails> observeSettlementDetails(String actorId,String groupId) {
+        return observe(() -> {
+            GroupDetails group=details(actorId,group(groupId),true);
+            List<Transfer> suggestions=SettlementCalculator.suggest(group.balances);
+            Map<String,String> upi=new HashMap<>();
+            for(Transfer transfer:suggestions) {
+                String value=user(transfer.payeeId).upiId;
+                if(value!=null && !value.trim().isEmpty()) upi.put(transfer.payeeId,value);
+            }
+            return new SettlementDetails(group,settlements(groupId),suggestions,upi);
+        });
+    }
     @Override public void saveSettlement(String actorId, Settlement value, Executor executor, RepositoryCallback<Settlement> callback) {
+        saveSettlement(actorId,value,false,executor,callback);
+    }
+    @Override public void saveSettlement(String actorId, Settlement value, boolean acknowledgeDuplicate, Executor executor, RepositoryCallback<Settlement> callback) {
         submit(true, () -> {
             Rules.id(value.id); member(value.groupId,actorId); Rules.positive(value.amountPaise); Rules.date(value.settlementDate);
+            if(value.payerId.equals(value.payeeId)) throw new IllegalArgumentException("Distinct parties required");
+            List<Settlement> records=settlements(value.groupId);
             boolean editing=exists("settlements",value.id);
-            if (editing) {
+            long limit;
+            if(editing) {
                 Settlement old=settlement(value.id);
-                if (!old.groupId.equals(value.groupId) || !old.payerId.equals(value.payerId) || !old.payeeId.equals(value.payeeId)) throw new IllegalArgumentException("Settlement parties and group are immutable");
-                update("settlements",value.id,values("amount_paise",value.amountPaise,"settlement_date",value.settlementDate));
+                if(!old.groupId.equals(value.groupId) || !old.payerId.equals(value.payerId) || !old.payeeId.equals(value.payeeId)) throw new IllegalArgumentException("Settlement parties and group are immutable");
+                limit=SettlementCalculator.editLimit(expenses(value.groupId),records,old);
             } else {
-                member(value.groupId,value.payerId); member(value.groupId,value.payeeId);
-                insert("settlements",values("id",value.id,"group_id",value.groupId,"payer_id",value.payerId,"payee_id",value.payeeId,"amount_paise",value.amountPaise,"settlement_date",value.settlementDate));
+                if(!actorId.equals(value.payerId) && !actorId.equals(value.payeeId)) throw new SecurityException("Only a party may record a payment");
+                historicalMember(value.groupId,value.payerId); historicalMember(value.groupId,value.payeeId);
+                limit=SettlementCalculator.suggestedLimit(balance(value.groupId),value.payerId,value.payeeId);
             }
+            if(value.amountPaise>limit) throw new IllegalArgumentException("Amount exceeds allowed transfer");
+            if(!acknowledgeDuplicate && SettlementCalculator.potentialDuplicate(records,value)) throw new DuplicateSettlementException();
+            if(editing) update("settlements",value.id,values("amount_paise",value.amountPaise,"settlement_date",value.settlementDate));
+            else insert("settlements",values("id",value.id,"group_id",value.groupId,"payer_id",value.payerId,"payee_id",value.payeeId,"amount_paise",value.amountPaise,"settlement_date",value.settlementDate));
             balance(value.groupId); return settlement(value.id);
         },executor,callback);
     }
