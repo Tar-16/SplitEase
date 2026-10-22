@@ -66,6 +66,76 @@ public class SqliteRepositoriesTest {
     private long count(SQLiteDatabase db,String table) {
         try(Cursor c=db.rawQuery("SELECT COUNT(*) FROM "+table,null)) { c.moveToFirst(); return c.getLong(0); }
     }
+    @Test public void groupCreationIsAtomicAndUsernameLookupIsNormalized() throws Exception {
+        seed();
+        MemberIdentity identity=await((RepositoryCallback<MemberIdentity> c) -> repo.findMemberByUsername(a,"  BOB  ",callbacks,c));
+        assertEquals(b,identity.id); assertEquals("bob",identity.username);
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<MemberIdentity> c) -> repo.findMemberByUsername(a,"bo",callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<MemberIdentity> c) -> repo.findMemberByUsername(UUID.randomUUID().toString(),"bob",callbacks,c)));
+        String id=UUID.randomUUID().toString();
+        Group value=new Group(id,"  Weekend  ",Group.Type.TRIP,a,200);
+        await((RepositoryCallback<Group> c) -> repo.createGroup(a,value,Arrays.asList(b,outsider),callbacks,c));
+        GroupDetails detail=snapshot(repo.observeGroupDetails(b,id));
+        assertEquals("Weekend",detail.group.name); assertEquals(Group.Type.TRIP,detail.group.type);
+        assertEquals(3,detail.members.size()); assertEquals(a,detail.group.adminId); assertEquals(a,detail.group.creatorId);
+        assertFalse(snapshot(repo.observeGroupDetails(a,id)).canLeave); assertTrue(detail.canLeave);
+        for(List<String> ids : Arrays.asList(Arrays.asList(b,b),Arrays.asList(b,UUID.randomUUID().toString()))) {
+            Group invalid=new Group(UUID.randomUUID().toString(),"Failed",Group.Type.FLAT,a,200);
+            assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Group> c) -> repo.createGroup(a,invalid,ids,callbacks,c)));
+        }
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Group> c) -> repo.createGroup(b,new Group(UUID.randomUUID().toString(),"Wrong actor",Group.Type.FLAT,a,200),Collections.emptyList(),callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Group> c) -> repo.createGroup(a,new Group(UUID.randomUUID().toString(),"  ",Group.Type.FLAT,a,200),Collections.emptyList(),callbacks,c)));
+        assertEquals(2,snapshot(repo.observeGroupSummaries(a)).size());
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,name)) {
+            assertEquals(2,count(helper.getReadableDatabase(),"groups"));
+            assertEquals(5,count(helper.getReadableDatabase(),"group_members"));
+        }
+    }
+    @Test public void adminMembershipPermissionsTransferAndHistoricalLeave() throws Exception {
+        seed();
+        assertTrue(snapshot(repo.observeGroupSummaries(outsider)).isEmpty());
+        assertThrows(ExecutionException.class, () -> snapshot(repo.observeGroupDetails(outsider,group)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.addMember(b,group,outsider,200,callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.addMember(outsider,group,outsider,200,callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.addMember(a,group,b,200,callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.transferAdmin(b,group,a,callbacks,c)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.transferAdmin(a,group,outsider,callbacks,c)));
+        await((RepositoryCallback<Boolean> c) -> repo.transferAdmin(a,group,b,callbacks,c));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.addMember(a,group,outsider,200,callbacks,c)));
+        await((RepositoryCallback<Boolean> c) -> repo.addMember(b,group,outsider,200,callbacks,c));
+        GroupDetails changed=snapshot(repo.observeGroupDetails(a,group));
+        assertEquals(b,changed.group.adminId); assertEquals(a,changed.group.creatorId); assertEquals(3,changed.members.size());
+        await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(a,group,300,callbacks,c));
+        assertTrue(snapshot(repo.observeGroupSummaries(a)).isEmpty());
+        assertThrows(ExecutionException.class, () -> snapshot(repo.observeGroupDetails(a,group)));
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.transferAdmin(a,group,outsider,callbacks,c)));
+        assertEquals(2,snapshot(repo.observeGroupDetails(b,group)).members.size());
+        GroupMember departed=snapshot(repo.observeMembers(group)).get(0);
+        assertEquals(GroupMember.Status.LEFT,departed.status); assertEquals(100,departed.joinedAt); assertEquals(Long.valueOf(300),departed.leftAt);
+        await((RepositoryCallback<Boolean> c) -> repo.addMember(b,group,a,400,callbacks,c));
+        GroupMember rejoined=snapshot(repo.observeMembers(group)).get(0);
+        assertEquals(GroupMember.Status.ACTIVE,rejoined.status); assertEquals(100,rejoined.joinedAt); assertNull(rejoined.leftAt);
+    }
+    @Test public void detailObservationRevokesAccessAndBalanceEligibilityIsExact() throws Exception {
+        seed();
+        String expenseId=UUID.randomUUID().toString();
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(expenseId,2),callbacks,c));
+        assertFalse(snapshot(repo.observeGroupDetails(b,group)).canLeave);
+        assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(b,group,300,callbacks,c)));
+        await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(a,expenseId,callbacks,c));
+        assertTrue(snapshot(repo.observeGroupDetails(b,group)).canLeave);
+        CompletableFuture<GroupDetails> initial=new CompletableFuture<>();
+        CompletableFuture<Exception> revoked=new CompletableFuture<>();
+        ObservableQuery.Subscription watch=repo.observeGroupDetails(b,group).subscribe(callbacks,new ObservableQuery.Observer<GroupDetails>() {
+            @Override public void onChanged(GroupDetails value) { initial.complete(value); }
+            @Override public void onError(Exception error) { revoked.complete(error); }
+        });
+        try {
+            initial.get(10,TimeUnit.SECONDS);
+            await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(b,group,400,callbacks,c));
+            assertNotNull(revoked.get(10,TimeUnit.SECONDS));
+        } finally { watch.close(); }
+    }
     @Test public void credentialsCrudConstraintsAndReopen() throws Exception {
         seed();
         assertTrue(await((RepositoryCallback<Boolean> c) -> repo.verifyPassword(a,"pass-one".toCharArray(),callbacks,c)));

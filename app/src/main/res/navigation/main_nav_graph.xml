@@ -6,4 +6,8 @@
     <fragment android:id="@+id/groups" android:name="com.example.splitease.ui.groups.GroupsFragment" android:label="@string/tab_groups" />
     <fragment android:id="@+id/recurring" android:name="com.example.splitease.ui.recurring.RecurringFragment" android:label="@string/tab_recurring" />
     <fragment android:id="@+id/profile" android:name="com.example.splitease.ui.profile.ProfileFragment" android:label="@string/tab_profile" />
+    <fragment android:id="@+id/create_group" android:name="com.example.splitease.ui.groups.CreateGroupFragment" android:label="@string/create_group" />
+    <fragment android:id="@+id/group_detail" android:name="com.example.splitease.ui.groups.GroupDetailFragment" android:label="@string/tab_groups">
+        <argument android:name="groupId" app:argType="string" />
+    </fragment>
 </navigation>

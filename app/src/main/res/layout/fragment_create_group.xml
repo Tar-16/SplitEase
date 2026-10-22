@@ -1,0 +1,23 @@
+<?xml version="1.0" ?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp">
+        <com.google.android.material.button.MaterialButton android:id="@+id/back" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_back"/>
+        <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/create_group" android:textAppearance="@style/TextAppearance.SplitEase.Title"/>
+        <TextView android:id="@+id/subtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_create_intro" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
+        <com.google.android.material.textfield.TextInputLayout style="@style/Widget.SplitEase.Input" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:hint="@string/group_name">
+            <com.google.android.material.textfield.TextInputEditText android:id="@+id/group_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textCapSentences" android:imeOptions="actionNext" android:maxLines="1"/>
+        </com.google.android.material.textfield.TextInputLayout>
+        <TextView android:id="@+id/type_label" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_type" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle"/>
+        <RadioGroup android:id="@+id/type" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:checkedButton="@id/flat">
+            <RadioButton android:id="@+id/flat" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/type_flat"/>
+            <RadioButton android:id="@+id/trip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginStart="24dp" android:text="@string/type_trip"/>
+        </RadioGroup>
+        <TextView android:id="@+id/members_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_members" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle"/>
+        <TextView android:id="@+id/creator" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_creator_included" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
+        <LinearLayout android:id="@+id/selected_members" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+        <include android:id="@+id/member_search" layout="@layout/view_member_search"/>
+        <ProgressBar android:id="@+id/progress" android:layout_width="32dp" android:layout_height="32dp" android:layout_gravity="center_horizontal" android:layout_marginTop="16dp"/>
+        <TextView android:id="@+id/error" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="?attr/colorError" android:accessibilityLiveRegion="polite" android:visibility="gone"/>
+        <com.google.android.material.button.MaterialButton android:id="@+id/create" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/create_group"/>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

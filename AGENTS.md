@@ -35,7 +35,7 @@
 - The Activity owns session-driven navigation. Keep its startup gate, clear tab/back-stack state when identity changes or logout succeeds, and never expose a restored authenticated destination before session validation. Preserve same-account Activity recreation and the three home tabs.
 - Use lifecycle-aware AuthViewModel LiveData and viewLifecycleOwner observers. Fragments may only bind state and forward actions. No direct repository/persistence/crypto calls from authentication/profile Fragments. Derive the profile user ID inside AuthService.
 - Prevent duplicate submissions; logout invalidates in-flight authentication work. Preserve safe callback threading and subscription cancellation.
-- Optional UPI IDs are profile metadata only: never claim verification or initiate payment. Groups/Recurring remain placeholders until their scoped milestone.
+- Optional UPI IDs are profile metadata only: never claim verification or initiate payment. Recurring remains a placeholder; Groups is implemented in Milestone 4. Expenses/Balances UI must remain placeholders until Milestone 5.
 - Run both service/session tests and real UI navigation tests when changing authentication. Test duplicate accounts, invalid credentials, recreation, logout/back boundaries, account switching and restored missing identities. Record actual API/device and lint coverage.
 
 - Final Milestone 3 evidence is in `docs/milestone-3-verification.md`. Keep completed automated checks distinct from manual device coverage; the full docked-keyboard, API 24 and physical-device checks remain outstanding. Do not treat a resumed verification request as authorization to start a new milestone.
@@ -52,3 +52,13 @@
 - Keep final reports concise.
 - Never skip essential security, money, or data-integrity tests.
 - Stop after completing the requested milestone.
+
+## Milestone 4 group rules
+
+- Reuse GroupsViewModel, GroupRepository, MemberIdentity and GroupDetails. Actor IDs originate only from AuthService; fragments supply actions/selected targets, never the acting identity.
+- Use the atomic createGroup(actor, group, memberIds, ...) operation for UI creation; never assemble group creation from separate membership writes. The creator is automatically the initial admin. Reject duplicate selections; keep database uniqueness/FKs authoritative.
+- Only the current admin adds/rejoins members or transfers admin to another current member. Check permissions inside the repository write transaction. Leaving is a status change, requires a zero derived balance, and cannot be performed by the current admin.
+- Use authorized observeGroupSummaries/observeGroupDetails for screens. Detail observations recheck membership on every emission. Username discovery is exact/normalized and returns only public UUID/username; never show account email or UPI to other members.
+- Keep group drafts in SavedStateHandle, close subscriptions on stop, and discard stale results/account state. Preserve the Activity’s authenticated-destination guard; bottom tabs appear only at the three root destinations.
+- Show real creation date (no last-activity column exists). Do not fabricate expense totals/balances. Keep Expenses and Balances as labeled placeholders. No schema change was needed; version remains 3.
+- Keep confirmation dialogs for immediate member additions, admin transfers and leaving. Group verification evidence is recorded in docs/milestone-4-verification.md.

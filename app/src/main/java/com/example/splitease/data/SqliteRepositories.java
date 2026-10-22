@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * App-scoped SQLite repository owner. All I/O uses one worker; writes and their permission
  * checks are atomic. Callbacks use the supplied executor (which must remain accepting).
- * Actor IDs are supplied by the future trusted session layer, not an authentication boundary.
+ * Actor IDs are supplied by the trusted AuthService presentation layer, not an authentication boundary.
  */
 public final class SqliteRepositories implements UserRepository, GroupRepository,
         ExpenseRepository, SettlementRepository, RecurringBillRepository, AutoCloseable {
@@ -212,13 +212,42 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
     }
     private Group group(String id) { return one("SELECT * FROM groups WHERE id=?", this::group, Rules.id(id)); }
     @Override public void createGroup(Group group, Executor executor, RepositoryCallback<Group> callback) {
+        createGroup(group.adminId,group,Collections.emptyList(),executor,callback);
+    }
+    @Override public void createGroup(String actorId, Group group, List<String> memberIds, Executor executor, RepositoryCallback<Group> callback) {
+        List<String> selected=new ArrayList<>(memberIds);
         submit(true, () -> {
-            Rules.date(group.createdAt); Rules.id(group.adminId);
-            if (!group.adminId.equals(group.creatorId)) throw new IllegalArgumentException("Creator must be initial admin");
-            insert("groups", values("id",Rules.id(group.id),"name",Rules.text(group.name),"type",group.type.name(),"admin_id",group.adminId,"creator_id",group.creatorId,"created_at",group.createdAt));
-            insert("group_members", values("group_id",group.id,"user_id",group.adminId,"status","ACTIVE","joined_at",group.createdAt));
+            Rules.date(group.createdAt); Rules.id(actorId);
+            if (!actorId.equals(group.adminId) || !actorId.equals(group.creatorId)) throw new IllegalArgumentException("Creator must be acting admin");
+            Set<String> ids=new LinkedHashSet<>();
+            for (String id : selected) if (!ids.add(Rules.id(id))) throw new IllegalArgumentException("Duplicate member");
+            ids.add(actorId);
+            insert("groups", values("id",Rules.id(group.id),"name",Rules.text(group.name),"type",group.type.name(),"admin_id",actorId,"creator_id",actorId,"created_at",group.createdAt));
+            for (String id : ids) insert("group_members", values("group_id",group.id,"user_id",id,"status","ACTIVE","joined_at",group.createdAt));
             return group(group.id);
         }, executor, callback);
+    }
+    @Override public void findMemberByUsername(String actorId, String username, Executor executor, RepositoryCallback<MemberIdentity> callback) {
+        submit(false, () -> {
+            if (!exists("users",actorId)) throw new SecurityException("Account required");
+            return one("SELECT id,username FROM users WHERE username=?",c -> new MemberIdentity(c.getString(0),c.getString(1)),Rules.text(AccountValidation.normalize(username)));
+        },executor,callback);
+    }
+    private GroupDetails details(String actorId, Group value, boolean includeEligibility) {
+        member(value.id,actorId);
+        List<MemberIdentity> members=query("SELECT u.id,u.username FROM users u JOIN group_members m ON m.user_id=u.id WHERE m.group_id=? AND m.status='ACTIVE' ORDER BY u.username COLLATE NOCASE,u.id",
+                c -> new MemberIdentity(c.getString(0),c.getString(1)),value.id);
+        return new GroupDetails(value,members,includeEligibility && !value.adminId.equals(actorId) && balance(value.id).getOrDefault(actorId,0L)==0L);
+    }
+    @Override public ObservableQuery<List<GroupDetails>> observeGroupSummaries(String actorId) {
+        return observe(() -> {
+            List<GroupDetails> result=new ArrayList<>();
+            for (Group value : query("SELECT g.* FROM groups g JOIN group_members m ON m.group_id=g.id WHERE m.user_id=? AND m.status='ACTIVE' ORDER BY g.created_at DESC,g.id",this::group,Rules.id(actorId))) result.add(details(actorId,value,false));
+            return Collections.unmodifiableList(result);
+        });
+    }
+    @Override public ObservableQuery<GroupDetails> observeGroupDetails(String actorId, String groupId) {
+        return observe(() -> details(actorId,group(groupId),true));
     }
     @Override public void updateGroup(String actorId, Group value, Executor executor, RepositoryCallback<Group> callback) {
         submit(true, () -> {
@@ -233,6 +262,7 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
     @Override public void addMember(String actorId, String groupId, String userId, long joinedAt, Executor executor, RepositoryCallback<Boolean> callback) {
         submit(true, () -> {
             member(groupId,actorId); Rules.id(userId); Rules.date(joinedAt);
+            if (!group(groupId).adminId.equals(actorId)) throw new SecurityException("Only the admin can add members");
             if (joinedAt < group(groupId).createdAt) throw new IllegalArgumentException("Membership predates group");
             // Preserve the original joined timestamp on rejoining; clear only the latest departure.
             int changed = db().update("group_members",values("status","ACTIVE","left_at",null),
