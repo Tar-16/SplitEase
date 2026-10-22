@@ -1,6 +1,6 @@
 # SplitEase
 
-Java Android expense-sharing app for Indian users. Milestone 4 adds real local groups and member management alongside signup/login, durable sessions, logout and account profiles. Recurring remains a placeholder; expense and balance screens are reserved for Milestone 5. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase, payments, OCR and notification scheduling are not included.
+Java Android expense-sharing app for Indian users. Milestone 5 adds real expenses, equal splits, edit/delete and live balances to local groups and member management. Local authentication and profiles are preserved. Recurring remains a placeholder. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase, payments, OCR and notification scheduling are not included.
 
 ## Setup and toolchain
 
@@ -12,7 +12,7 @@ Open the directory in Android Studio supporting AGP 9.2 (Panda 4 or newer). Inst
 - The existing daemon JVM configuration selects JDK 25; verification used JDK 25. Java application code remains Java 17.
 - Existing dependencies: AppCompat 1.7.1, Core 1.17.0, Activity 1.12.4, Fragment 1.8.9, Navigation Fragment/UI 2.9.8, Material Components 1.13.0.
 - Added: Bouncy Castle `bcprov-jdk18on:1.83` for portable Argon2id across API 24+, AndroidX Test Runner 1.6.2 and AndroidX Test JUnit 1.2.1. JUnit 4.13.2 remains for local tests.
-- Milestone 3 adds Lifecycle ViewModel/LiveData 2.11.0; application version name is 0.4.0.
+- Milestone 3 adds Lifecycle ViewModel/LiveData 2.11.0; application version name is 0.5.0.
 - XML Android Views and ViewBinding; no Kotlin application sources or Compose. Dependencies may internally use Kotlin.
 
 ```sh
@@ -28,7 +28,7 @@ Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Initial dependency resol
 ```text
 app/src/main/java/com/example/splitease/
   SplitEaseApplication.java   Composition root; opens database asynchronously
-  ui/                         Activity, auth, Profile, Groups screens/ViewModel, Recurring placeholder
+  ui/                         Activity, auth, Profile, Groups and Expenses screens/ViewModels, Recurring placeholder
   auth/                       Replaceable AuthService, LocalAuthService and SessionStore
   model/                      Immutable User, Group, GroupMember, Expense,
                               ExpenseSplit, Settlement, RecurringBill,
@@ -52,13 +52,25 @@ Feature interfaces expose no Android, SQLite or Firebase types, allowing future 
 
 ## Groups and members (Milestone 4)
 
-- Home observes only the authenticated account’s current groups, with Flat/Trip type, current member count/initials and actual creation date. There is no last-activity column, so no invented activity or balance is shown.
+- Home observes only the authenticated account’s current groups, with Flat/Trip type, current member count/initials and actual creation date. Actual total expenses, your net balance and latest expense date are shown. There is no modification/activity-log column.
 - Create a group with a name, type and optional existing users found by exact, case-insensitive username. Remove selections before saving. Creator membership and all selected memberships are committed atomically, with the creator as initial admin.
 - Current members can view details. Only the current admin can add members or transfer ownership to another current member. Additions take effect immediately, without invitations, after confirmation. Transfer and departure also require confirmation.
 - Leaving requires exactly zero derived balance and prior ownership transfer if you are admin. Departures retain the membership row and historical records; rejoining preserves original join time. A sole admin cannot leave until another member is added and made admin.
 - `MemberIdentity` exposes only UUID and username. `GroupDetails` is an immutable authorized snapshot; detail observations recheck current membership on every refresh. Search does not return emails, UPI IDs or credentials. Existing lower-level accounting APIs remain trusted internal contracts, not a public API/security boundary.
 - `GroupsViewModel` obtains the actor from AuthService, cancels observations when stopped, ignores stale callbacks after identity changes, and saves non-sensitive creation drafts in SavedStateHandle. The Activity guards creation/detail destinations and shows bottom tabs only at Groups/Recurring/Profile roots. Logout/account changes discard the prior navigation state.
-- No schema migration, new dependency, authentication change or recurring-model change was required. Lists are currently unpaginated for local use. Expenses/Balances are explicitly labeled placeholders; no accounting UI or payments were added.
+- No schema migration, new dependency, authentication change or recurring-model change was required. Lists are currently unpaginated for local use. Expenses/Balances are implemented in Milestone 5; no payments or settlement-entry UI were added.
+
+## Expenses and balances (Milestone 5)
+
+Group Detail now has Members, Expenses and Balances tabs. Expenses are grouped by their UTC calendar date (newest first), with category glyph/label, payer, total, participant count, your share and your signed net impact. The floating add action opens the editor; viewing an expense offers edit and confirmed deletion. Any current group member can edit/delete.
+
+The editor accepts a title, positive INR amount (plain digits with up to two decimal places), payer, one or more checkbox participants, Food/Travel/Rent/Bills/Other category, and a calendar date. Exact shares preview immediately using the existing sorted-UUID remainder rule. No implicit rounding, percentage or custom splits. New payers/participants must be current members; an old expense can retain its original departed payer/participants, visibly labeled former members. Existing legacy category text can be retained on edit, but new entries use the five categories.
+
+`ExpenseViewModel` derives its actor from AuthService and keeps a SavedStateHandle draft across recreation. It uses the existing GroupRepository authorized snapshot stream and ExpenseRepository mutations. Fragments handle views/navigation only. SQLite atomically saves expense/split replacements, checks membership inside transactions and rolls back invalid/overflowing changes. `ExpenseAmounts` parses with BigDecimal and checked long conversion; summaries and per-expense impact use checked integer paise. The total-expense aggregate is checked before committing a save, even when net balances cancel to zero.
+
+`GroupDetails` includes immutable expense, balance and public-name snapshots in the same worker read. It retains current members and historical identities referenced by expenses or recorded settlements. Balances derive from the existing `Balances` domain logic; positive is owed to the member, negative is owed by the member, zero is settled. These aggregate nets do not imply specific debtor/creditor payment pairs. They are never persisted and recurring contributions never enter them. Home and Detail refresh after mutations and account switches. The summary total means all expense amounts, not outstanding debt; latest expense date is an actual expense date, not an invented modification timestamp.
+
+Schema remains version 3; there are no new dependencies, tables or migrations. No settlement entry, recommendations, UPI payments, OCR, recurring UI or Firebase were implemented.
 
 ## Schema and migrations
 
@@ -129,12 +141,12 @@ Local accounts/data are device-specific. Firebase will start fresh; no local-acc
 
 ## Verification
 
-Milestone 4 final status: debug build/install successful, **14/14 local tests** and **18/18 API 37 emulator tests** passing; lint has **0 errors and 13 existing warnings**. Focused group tests cover atomic creation, normalized username lookup, duplicate rejection, admin-only mutations, transfer/leave eligibility, revoked access, account switching and recreation. The full suite also retains authentication, migration, money and recurring-isolation coverage. A post-suite singular/plural presentation correction was rebuilt, linted and checked on the installed APK.
+Milestone 5: build/install passed, **16/16 local tests** and **24/24 API 37 emulator tests** passed. Final lint has **0 errors and 13 pre-existing warnings**, with no new warnings. Exact expense arithmetic, history, permissions, account switching, recreation and existing recurring isolation are covered. Earlier milestone reports remain as historical evidence.
 
-Current verification and lint classification are in `docs/milestone-4-verification.md`; authentication evidence is retained in `docs/milestone-3-verification.md`; the earlier persistence report remains in `docs/milestone-2-verification.md`. Local tests cover leftover paise, order independence, long limits, overflow, partial settlements, invalid inputs and leap-month clamping. Instrumentation tests use actual Android SQLite for CRUD, constraints, reopening, transaction rollback after injected failures, recurring isolation/history/uniqueness, migrations, member/admin rules, callback threading and observer cancellation. A navigation test launches all three tabs and recreates the Activity.
+Current verification and lint classification are in `docs/milestone-5-verification.md`; authentication evidence is retained in `docs/milestone-3-verification.md`; the earlier persistence report remains in `docs/milestone-2-verification.md`. Local tests cover leftover paise, order independence, long limits, overflow, partial settlements, invalid inputs and leap-month clamping. Instrumentation tests use actual Android SQLite for CRUD, constraints, reopening, transaction rollback after injected failures, recurring isolation/history/uniqueness, migrations, member/admin rules, callback threading and observer cancellation. A navigation test launches all three tabs and recreates the Activity.
 
 ## Next milestone
 
-Milestone 5 may add the approved expense/balance UI using the current authenticated identity and existing accounting repositories; its detailed scope must be confirmed separately. Milestone 4 stops at group/member management. Keep recurring contributions separate from balances and ordinary expenses. Add minimum-SDK/physical-device coverage. Firebase Auth/Firestore remain Phase 2 with fresh accounts and data; password recovery belongs to that phase. Notifications, payments, OCR and final settlement optimization are outside the current milestone.
+Milestone 6 may add the approved settlement-recommendation and payment scope; detailed requirements remain separate. Milestone 5 stops at expenses and aggregate balances. Keep recurring contributions separate from balances and ordinary expenses. Add minimum-SDK/physical-device coverage. Firebase Auth/Firestore remain Phase 2 with fresh accounts and data; password recovery belongs to that phase. Notifications, payments, OCR and final settlement optimization are outside the current milestone.
 
 See `AGENTS.md` for mandatory architecture rules.

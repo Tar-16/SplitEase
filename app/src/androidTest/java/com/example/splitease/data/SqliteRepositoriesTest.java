@@ -136,6 +136,52 @@ public class SqliteRepositoriesTest {
             assertNotNull(revoked.get(10,TimeUnit.SECONDS));
         } finally { watch.close(); }
     }
+    @Test public void expenseSummariesRecalculateAndPersistAfterReopen() throws Exception {
+        seed(); String id=UUID.randomUUID().toString();
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(id,101),callbacks,c));
+        GroupDetails first=snapshot(repo.observeGroupDetails(b,group));
+        assertEquals(101,first.totalExpenses); assertEquals(51,first.expenses.get(0).splits.get(0).sharePaise);
+        assertEquals(Long.valueOf(-50),first.balances.get(b)); assertEquals(Long.valueOf(50),first.balances.get(a));
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(b,expense(id,201),callbacks,c));
+        assertEquals(201,snapshot(repo.observeGroupSummaries(b)).get(0).totalExpenses);
+        repo.close(); repo=new SqliteRepositories(context,name);
+        GroupDetails reopened=snapshot(repo.observeGroupDetails(a,group));
+        assertEquals(201,reopened.totalExpenses); assertEquals(Long.valueOf(-100),reopened.balances.get(b));
+        assertThrows(ExecutionException.class,() -> snapshot(repo.observeGroupDetails(outsider,group)));
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Expense> c) -> repo.saveExpense(outsider,expense(id,301),callbacks,c)));
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(outsider,id,callbacks,c)));
+        await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(b,id,callbacks,c));
+        GroupDetails deleted=snapshot(repo.observeGroupDetails(a,group));
+        assertEquals(0,deleted.totalExpenses); assertTrue(deleted.expenses.isEmpty());
+        assertEquals(Long.valueOf(0),deleted.balances.get(a)); assertEquals(Long.valueOf(0),deleted.balances.get(b));
+    }
+    @Test public void historicalAccountingIdentitiesSurviveDepartureAndEdits() throws Exception {
+        seed(); String id=UUID.randomUUID().toString();
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(id,100),callbacks,c));
+        await((RepositoryCallback<Settlement> c) -> repo.saveSettlement(b,new Settlement(UUID.randomUUID().toString(),group,b,a,50,300),callbacks,c));
+        await((RepositoryCallback<Boolean> c) -> repo.leaveGroup(b,group,400,callbacks,c));
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(id,300),callbacks,c));
+        GroupDetails history=snapshot(repo.observeGroupDetails(a,group));
+        assertEquals(1,history.members.size()); assertEquals("bob",history.names.get(b));
+        assertEquals(Long.valueOf(-100),history.balances.get(b)); assertEquals(Long.valueOf(100),history.balances.get(a));
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,expense(UUID.randomUUID().toString(),100),callbacks,c)));
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Expense> c) -> repo.saveExpense(b,expense(id,200),callbacks,c)));
+        await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(a,id,callbacks,c));
+        assertEquals(Long.valueOf(50),snapshot(repo.observeGroupDetails(a,group)).balances.get(b));
+        assertEquals("bob",snapshot(repo.observeGroupDetails(a,group)).names.get(b));
+    }
+    @Test public void aggregateOverflowRollsBackEvenWhenEveryNetBalanceIsZero() throws Exception {
+        seed(); String id=UUID.randomUUID().toString(), second=UUID.randomUUID().toString();
+        Expense max=new Expense(id,group,"Solo",Long.MAX_VALUE,a,a,"Other",200,Collections.singletonList(new ExpenseSplit(id,a,Long.MAX_VALUE)));
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(a,max,callbacks,c));
+        Expense extra=new Expense(second,group,"Overflow",1,b,b,"Other",201,Collections.singletonList(new ExpenseSplit(second,b,1)));
+        assertThrows(ExecutionException.class,() -> await((RepositoryCallback<Expense> c) -> repo.saveExpense(b,extra,callbacks,c)));
+        GroupDetails snapshot=snapshot(repo.observeGroupDetails(a,group));
+        assertEquals(Long.MAX_VALUE,snapshot.totalExpenses); assertEquals(1,snapshot.expenses.size()); assertEquals(Long.valueOf(0),snapshot.balances.get(a));
+        await((RepositoryCallback<Boolean> c) -> repo.deleteExpense(a,id,callbacks,c));
+        await((RepositoryCallback<Expense> c) -> repo.saveExpense(b,extra,callbacks,c));
+        assertEquals(1,snapshot(repo.observeGroupDetails(b,group)).totalExpenses);
+    }
     @Test public void credentialsCrudConstraintsAndReopen() throws Exception {
         seed();
         assertTrue(await((RepositoryCallback<Boolean> c) -> repo.verifyPassword(a,"pass-one".toCharArray(),callbacks,c)));

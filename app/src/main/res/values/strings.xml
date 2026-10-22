@@ -56,6 +56,4 @@
     <string name="group_add_confirm">Add %1$s to this group now? They will immediately become a member, without an invitation.</string>
     <string name="group_confirm">Confirm</string>
     <string name="group_cancel">Cancel</string>
-    <string name="group_expenses_placeholder">Expenses · Coming in Milestone 5</string>
-    <string name="group_balances_placeholder">Balances · Coming in Milestone 5</string>
 </resources>

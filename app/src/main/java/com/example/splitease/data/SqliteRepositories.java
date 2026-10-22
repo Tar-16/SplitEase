@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteConstraintException;
 import com.example.splitease.domain.AccountValidation;
 import com.example.splitease.domain.Balances;
+import com.example.splitease.domain.ExpenseAmounts;
 import com.example.splitease.domain.Rules;
 import com.example.splitease.model.*;
 import com.example.splitease.repository.*;
@@ -237,7 +238,17 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
         member(value.id,actorId);
         List<MemberIdentity> members=query("SELECT u.id,u.username FROM users u JOIN group_members m ON m.user_id=u.id WHERE m.group_id=? AND m.status='ACTIVE' ORDER BY u.username COLLATE NOCASE,u.id",
                 c -> new MemberIdentity(c.getString(0),c.getString(1)),value.id);
-        return new GroupDetails(value,members,includeEligibility && !value.adminId.equals(actorId) && balance(value.id).getOrDefault(actorId,0L)==0L);
+        List<Expense> expenses=expenses(value.id);
+        Map<String,Long> balances=new TreeMap<>(Balances.calculate(expenses,settlements(value.id)));
+        Set<String> needed=new HashSet<>(balances.keySet());
+        for(MemberIdentity current:members) { needed.add(current.id); balances.putIfAbsent(current.id,0L); }
+        Map<String,String> names=new LinkedHashMap<>();
+        for(MemberIdentity identity:query("SELECT u.id,u.username FROM users u JOIN group_members m ON m.user_id=u.id WHERE m.group_id=? ORDER BY u.username COLLATE NOCASE,u.id",
+                c -> new MemberIdentity(c.getString(0),c.getString(1)),value.id)) {
+            if(needed.contains(identity.id)) names.put(identity.id,identity.username);
+        }
+        return new GroupDetails(value,members,includeEligibility && !value.adminId.equals(actorId) && balances.getOrDefault(actorId,0L)==0L,
+                expenses,balances,names,ExpenseAmounts.total(expenses));
     }
     @Override public ObservableQuery<List<GroupDetails>> observeGroupSummaries(String actorId) {
         return observe(() -> {
@@ -328,6 +339,7 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
             else { row.put("id",value.id); insert("expenses",row); }
             for (ExpenseSplit split : value.splits) insert("expense_splits",values("expense_id",value.id,"group_id",value.groupId,"user_id",split.userId,"share_paise",split.sharePaise));
             balance(value.groupId); // Fail atomically on long overflow rather than persist unusable balances.
+            ExpenseAmounts.total(expenses(value.groupId)); // Group totals must also remain representable.
             return expense(value.id);
         },executor,callback);
     }

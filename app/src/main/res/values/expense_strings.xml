@@ -1,0 +1,39 @@
+<resources>
+<string name="expense_add">Add expense</string>
+<string name="expense_edit">Edit expense</string>
+<string name="expense_details">Expense details</string>
+<string name="expense_title">Title</string>
+<string name="expense_amount">Amount (INR)</string>
+<string name="expense_payer">Paid by</string>
+<string name="expense_participants">Split equally between</string>
+<string name="expense_category">Category</string>
+<string name="expense_date">Expense date: %1$s</string>
+<string name="expense_save">Save expense</string>
+<string name="expense_delete">Delete expense</string>
+<string name="expense_delete_confirm">Delete this expense and its splits? Everyone’s balance will be recalculated.</string>
+<string name="expense_invalid">Enter a title, a positive INR amount with up to two decimals, a valid payer and at least one participant. Amounts must fit in integer paise.</string>
+<string name="expense_load_error">Unable to load this group. Check your membership and try again.</string>
+<string name="expense_missing">This expense is no longer available.</string>
+<string name="expense_save_error">Unable to save the change. Check your membership, participants and amount, then try again. Totals must fit in integer paise.</string>
+<string name="expense_preview_hint">Enter a valid amount and select participants to see exact shares.</string>
+<string name="expense_share">%1$s · %2$s</string>
+<string name="expense_former">%1$s (former member)</string>
+<string name="expense_total">Total expenses: %1$s</string>
+<string name="expense_latest">Latest expense date: %1$s</string>
+<string name="expense_your_balance">Your balance: %1$s</string>
+<string name="balance_owed">Owed to you: %1$s</string>
+<string name="balance_owes">You owe: %1$s</string>
+<string name="balance_member_owed">Owed to member: %1$s</string>
+<string name="balance_member_owes">Member owes: %1$s</string>
+<string name="balance_settled">Settled</string>
+<string name="balance_explanation">Net balances include recorded settlements. These totals do not identify who should pay whom.</string>
+<string name="expenses_tab">Expenses</string>
+<string name="balances_tab">Balances</string>
+<string name="expenses_empty">No expenses yet. Add the first shared cost.</string>
+<string name="expense_card_payer">%1$s · Paid by %2$s</string>
+<string name="expense_card_share">Your share: %1$s · Net impact: %2$s</string>
+<string name="expense_open">View expense</string>
+<string name="expense_open_named">View expense: %1$s</string>
+<string name="expense_preview_title">Calculated shares</string>
+<plurals name="expense_people"><item quantity="one">%d participant</item><item quantity="other">%d participants</item></plurals>
+</resources>

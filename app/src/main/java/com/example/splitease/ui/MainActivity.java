@@ -65,13 +65,13 @@ public final class MainActivity extends AppCompatActivity {
         boolean authenticated=session.status == SessionState.Status.SIGNED_IN;
         String userId=authenticated ? session.user.id : null;
         NavDestination current=navigation.getCurrentDestination();
-        boolean allowed=current != null && (authenticated ? (isHome(current.getId()) || current.getId()==R.id.create_group || current.getId()==R.id.group_detail) : current.getId()==R.id.login || current.getId()==R.id.signup);
+        boolean allowed=current != null && (authenticated ? (isHome(current.getId()) || current.getId()==R.id.create_group || current.getId()==R.id.group_detail || current.getId()==R.id.expense_screen) : current.getId()==R.id.login || current.getId()==R.id.signup);
         if (!allowed || !Objects.equals(navigationUserId,userId)) {
             binding.mainContent.setVisibility(View.INVISIBLE);
             synchronizing=true;
             try {
                 if (current != null) {
-                    for (int id : new int[]{R.id.groups,R.id.recurring,R.id.profile,R.id.login,R.id.signup,R.id.create_group,R.id.group_detail}) navigation.clearBackStack(id);
+                    for (int id : new int[]{R.id.groups,R.id.recurring,R.id.profile,R.id.login,R.id.signup,R.id.create_group,R.id.group_detail,R.id.expense_screen}) navigation.clearBackStack(id);
                 }
                 int target=authenticated ? R.id.groups : R.id.login;
                 NavGraph graph=navigation.getNavInflater().inflate(R.navigation.main_nav_graph);

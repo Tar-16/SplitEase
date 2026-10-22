@@ -35,7 +35,7 @@
 - The Activity owns session-driven navigation. Keep its startup gate, clear tab/back-stack state when identity changes or logout succeeds, and never expose a restored authenticated destination before session validation. Preserve same-account Activity recreation and the three home tabs.
 - Use lifecycle-aware AuthViewModel LiveData and viewLifecycleOwner observers. Fragments may only bind state and forward actions. No direct repository/persistence/crypto calls from authentication/profile Fragments. Derive the profile user ID inside AuthService.
 - Prevent duplicate submissions; logout invalidates in-flight authentication work. Preserve safe callback threading and subscription cancellation.
-- Optional UPI IDs are profile metadata only: never claim verification or initiate payment. Recurring remains a placeholder; Groups is implemented in Milestone 4. Expenses/Balances UI must remain placeholders until Milestone 5.
+- Optional UPI IDs are profile metadata only: never claim verification or initiate payment. Recurring remains a placeholder; Groups is implemented in Milestone 4. Expenses/Balances UI is implemented in Milestone 5; settlement/payment flows require their own milestone.
 - Run both service/session tests and real UI navigation tests when changing authentication. Test duplicate accounts, invalid credentials, recreation, logout/back boundaries, account switching and restored missing identities. Record actual API/device and lint coverage.
 
 - Final Milestone 3 evidence is in `docs/milestone-3-verification.md`. Keep completed automated checks distinct from manual device coverage; the full docked-keyboard, API 24 and physical-device checks remain outstanding. Do not treat a resumed verification request as authorization to start a new milestone.
@@ -60,5 +60,16 @@
 - Only the current admin adds/rejoins members or transfers admin to another current member. Check permissions inside the repository write transaction. Leaving is a status change, requires a zero derived balance, and cannot be performed by the current admin.
 - Use authorized observeGroupSummaries/observeGroupDetails for screens. Detail observations recheck membership on every emission. Username discovery is exact/normalized and returns only public UUID/username; never show account email or UPI to other members.
 - Keep group drafts in SavedStateHandle, close subscriptions on stop, and discard stale results/account state. Preserve the Activity’s authenticated-destination guard; bottom tabs appear only at the three root destinations.
-- Show real creation date (no last-activity column exists). Do not fabricate expense totals/balances. Keep Expenses and Balances as labeled placeholders. No schema change was needed; version remains 3.
+- Show real creation date (no last-activity column exists). Do not fabricate expense totals/balances. Milestone 5 uses actual authorized accounting snapshots. No schema change was needed; version remains 3.
 - Keep confirmation dialogs for immediate member additions, admin transfers and leaving. Group verification evidence is recorded in docs/milestone-4-verification.md.
+
+
+## Milestone 5 expense rules
+
+- Reuse ExpenseViewModel, ExpenseRepository mutations, authorized GroupDetails streams, ExpenseAmounts, Rules.equalSplit and Balances. No separate accounting database or persisted balances.
+- Parse plain positive INR decimals to exact long paise. Reject more than two decimal places, overflow, empty participants and invalid inputs; never silently round. Check aggregate expense totals as well as net balances before committing saves.
+- New payers and participants must be current members. Editing may retain the original departed payer/participants; preserve names and historical references and label former members. Repository permissions and atomic split replacement are authoritative.
+- Categories for new entries are Food, Travel, Rent, Bills and Other. Old category text can be retained. Expense dates are displayed/grouped by UTC calendar date consistently; do not reinterpret them as modification timestamps.
+- Balance displays include recorded settlements and referenced historical identities, but never recurring contributions. Show net owed/owing/settled amounts without inventing debtor-to-creditor pairs. Total expenses means spending, not outstanding debt.
+- Keep expense drafts session-bound and lifecycle-aware. Close observations on stop, suppress stale callbacks on account change and require confirmation for deletion. The expense destination is authenticated and has no bottom tabs.
+- No settlement entry, payment/UPI execution, recommendations, OCR, recurring UI or Firebase was authorized in Milestone 5. Verification evidence belongs in docs/milestone-5-verification.md.
