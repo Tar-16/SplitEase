@@ -4,11 +4,6 @@
     <string name="tab_recurring">Recurring</string>
     <string name="tab_profile">Profile</string>
     <string name="eyebrow">SPLITEASE</string>
-    <string name="recurring_subtitle">A home for regular expenses.</string>
-    <string name="recurring_title">Keep the everyday in view</string>
-    <string name="recurring_body">Recurring expenses will have their own space here. Scheduling is not available yet.</string>
-    <string name="recurring_note">Foundation preview</string>
-    <string name="preview">APP PREVIEW</string>
     <string name="new_group">+ New Group</string>
     <string name="create_group">Create group</string>
     <string name="group_name">Group name</string>

@@ -6,6 +6,9 @@ import java.util.concurrent.Executor;
 
 /** Async operations. Supply a serial callback executor; missing records report onError. */
 public interface RecurringBillRepository {
+    ObservableQuery<RecurringSnapshot> observeRecurring(String actorId);
+    void ensureCycles(String actorId,long now,Executor executor,RepositoryCallback<Integer> callback);
+    void claimReminders(String actorId,long now,Executor executor,RepositoryCallback<List<BillReminder>> callback);
     void saveBill(String actorId, RecurringBill bill, Executor executor, RepositoryCallback<RecurringBill> callback);
     void deleteBill(String actorId, String billId, Executor executor, RepositoryCallback<Boolean> callback);
     void createCycle(String actorId, String billId, int year, int month, Executor executor, RepositoryCallback<RecurringBillCycle> callback);

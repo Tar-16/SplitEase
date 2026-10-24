@@ -16,7 +16,7 @@
 
 ## Milestone 2 invariants
 
-- SQLite schema version 3: v1 core accounting, v2 isolated recurring tables, v3 original creator attribution. Never delete user data on upgrade or downgrade. Preserve foreign keys, parameter binding and atomic writes with permission checks inside transactions.
+- SQLite schema version 4: v1 core accounting, v2 isolated recurring tables, v3 original creator attribution, v4 recurring generation cursors/reminder receipts. Never delete user data on upgrade or downgrade. Preserve foreign keys, parameter binding and atomic writes with permission checks inside transactions.
 - Retain group creator separately from transferable admin ownership. Historical membership stays identifiable. Leaving requires exactly zero derived balance and prior admin transfer; no SQL deletes on leave.
 - Equal splits use sorted UUID order for deterministic leftover paise; shares must equal the expense total. All arithmetic is checked `long` arithmetic. Do not persist balances.
 - Expense edits may retain historical participants. Only current members can mutate group records. Settlement group/payer/payee are immutable; amount/date edits overwrite. Partial settlements are valid and duplicate-looking records are not blocked.
@@ -35,7 +35,7 @@
 - The Activity owns session-driven navigation. Keep its startup gate, clear tab/back-stack state when identity changes or logout succeeds, and never expose a restored authenticated destination before session validation. Preserve same-account Activity recreation and the three home tabs.
 - Use lifecycle-aware AuthViewModel LiveData and viewLifecycleOwner observers. Fragments may only bind state and forward actions. No direct repository/persistence/crypto calls from authentication/profile Fragments. Derive the profile user ID inside AuthService.
 - Prevent duplicate submissions; logout invalidates in-flight authentication work. Preserve safe callback threading and subscription cancellation.
-- Optional UPI IDs are unverified profile metadata. Milestone 6 permits explicit UPI handoff only; never claim verification or payment confirmation. Recurring remains a placeholder; Groups is implemented in Milestone 4. Expenses/Balances UI is implemented in Milestone 5; settlement/payment flows require their own milestone.
+- Optional UPI IDs are unverified profile metadata. Milestone 6 permits explicit UPI handoff only; never claim verification or payment confirmation. Groups, expenses/balances, settlements/UPI handoff and the recurring tracker are implemented in Milestones 4–7. Preserve all of them.
 - Run both service/session tests and real UI navigation tests when changing authentication. Test duplicate accounts, invalid credentials, recreation, logout/back boundaries, account switching and restored missing identities. Record actual API/device and lint coverage.
 
 - Final Milestone 3 evidence is in `docs/milestone-3-verification.md`. Keep completed automated checks distinct from manual device coverage; the full docked-keyboard, API 24 and physical-device checks remain outstanding. Do not treat a resumed verification request as authorization to start a new milestone.
@@ -81,3 +81,13 @@
 - Duplicate heuristic: same group, payer, payee, amount and UTC calendar date, excluding the edited record. Require explicit acknowledgement; recheck permissions and amount limits transactionally even after acknowledgement.
 - UPI handoff uses the selected current suggestion amount, encoded pa/pn/am/cu/tn fields and a system chooser. Missing apps must be safe. Never infer success from returning/cancelling or automatically record a payment. Manual recording always remains separate, with confirmation.
 - No schema change or new dependencies for M6. Preserve records, lifecycle cancellation and authenticated navigation. Evidence belongs in docs/milestone-6-verification.md. Stop after M6; recurring UI, OCR and Firebase remain outside scope.
+
+## Milestone 7 recurring tracker rules
+
+- Reuse RecurringBillRepository, immutable recurring snapshots, RecurringViewModel and application-owned RecurringReminders. All screens obtain actors from AuthService; repository transactions check current membership. Recurring contributions never create expenses/settlements or enter balances.
+- Use UTC billing months/dates and Rules.equalSplit. Clamp due days to month end. Existing cycle amount, handler, participants/shares and due date are immutable. Current members may toggle any historical contribution; paid means contributed to the cycle handler.
+- Generation uses the persisted next-month cursor, transactional `(bill_id,year,month)` duplicate protection and the current template for missing months. Create through the current month, plus next month when its reminder window opens. Fill old missing months before template edits. Migration starts at the first known cycle, or the upgrade month when there is no history. Never invent pre-creation history.
+- Inactive bills do not generate; reactivation restarts in the current month, excluding inactive gaps. Invalid templates with departed members pause generation until corrected; history remains visible and deactivation remains possible.
+- WorkManager runs deferrable periodic checks and immediate resume/update checks. No exact-minute claims. Check runtime permission, global notifications and channel settings before claiming. Durable cycle/recipient receipts prevent duplicates, including account switches. Claims happen before posting: a process/permission race may miss a reminder rather than duplicate it.
+- Local notifications only target the restored signed-in unpaid participant. Never fan out other accounts’ private notifications. Clear notifications/work on identity changes; prune notifications after membership/status/deactivation updates. PendingIntents include recipient and bill; validate session and membership before showing details. Never use a notification as authorization.
+- Keep scheduling and SQL out of Fragments. M7 schema changes are additive only. Keep manual verification limits explicit in docs/milestone-7-verification.md. Stop after M7; OCR and Firebase remain future scope.

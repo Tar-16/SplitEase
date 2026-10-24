@@ -10,6 +10,7 @@ import com.example.splitease.domain.Balances;
 import com.example.splitease.domain.SettlementCalculator;
 import com.example.splitease.domain.ExpenseAmounts;
 import com.example.splitease.domain.Rules;
+import com.example.splitease.domain.RecurringSchedule;
 import com.example.splitease.model.*;
 import com.example.splitease.repository.*;
 import java.util.*;
@@ -28,8 +29,10 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
     private final List<Watch<?>> watches = new CopyOnWriteArrayList<>();
     private final AtomicBoolean closed = new AtomicBoolean();
 
-    public SqliteRepositories(Context context) { helper = new SplitEaseDatabase(context); }
-    public SqliteRepositories(Context context, String databaseName) { helper = new SplitEaseDatabase(context, databaseName); }
+    private final java.util.function.LongSupplier clock;
+    public SqliteRepositories(Context context) { this(context,"splitease.db"); }
+    public SqliteRepositories(Context context, String databaseName) { this(context,databaseName,System::currentTimeMillis); }
+    SqliteRepositories(Context context,String databaseName,java.util.function.LongSupplier clock) { helper=new SplitEaseDatabase(context,databaseName);this.clock=clock; }
     private interface Work<T> { T run() throws Exception; }
     private interface Mapper<T> { T read(Cursor cursor); }
     private SQLiteDatabase db() { return helper.getWritableDatabase(); }
@@ -403,10 +406,11 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
         submit(true, () -> {
             Rules.id(value.id); member(value.groupId,actorId); Rules.equalSplit(value.amountPaise,value.participantIds);
             Rules.dueDate(2000,1,value.dueDay);
-            if (value.reminderLeadDays < 0) throw new IllegalArgumentException("Negative reminder lead time");
+            if (value.reminderLeadDays < 0 || value.reminderLeadDays > 31) throw new IllegalArgumentException("Negative reminder lead time");
             boolean editing=exists("recurring_bills",value.id);
             RecurringBill old=editing ? bill(value.id) : null;
             if (editing && !old.groupId.equals(value.groupId)) throw new IllegalArgumentException("Bill group is immutable");
+            if(old!=null && old.active) generate(old,clock.getAsLong());
             // Disabling a bill is always possible, including after a participant leaves.
             for (String id : value.participantIds) {
                 if (!value.active && old != null && old.participantIds.contains(id)) historicalMember(value.groupId,id);
@@ -420,6 +424,9 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
             if (editing) { update("recurring_bills",value.id,row); db().delete("recurring_participants","bill_id=?",new String[]{value.id}); }
             else { row.put("id",value.id); insert("recurring_bills",row); }
             for (String id : value.participantIds) insert("recurring_participants",values("bill_id",value.id,"group_id",value.groupId,"user_id",id));
+            if(!editing) insert("recurring_schedule",values("bill_id",value.id,"next_month",RecurringSchedule.month(clock.getAsLong())));
+            else if(!old.active && value.active) db().update("recurring_schedule",values("next_month",RecurringSchedule.month(clock.getAsLong())),"bill_id=?",new String[]{value.id});
+            if(value.active) generate(bill(value.id),clock.getAsLong());
             return bill(value.id);
         },executor,callback);
     }
@@ -439,11 +446,69 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
             if (!value.active) throw new IllegalStateException("Bill is inactive");
             for (String id : value.participantIds) member(value.groupId,id);
             if (value.handlerId != null) member(value.groupId,value.handlerId);
-            String id=UUID.randomUUID().toString();
-            insert("recurring_cycles",values("id",id,"bill_id",billId,"group_id",value.groupId,"year",year,"month",month,"due_date",Rules.dueDate(year,month,value.dueDay),"amount_paise",value.amountPaise,"handler_id",value.handlerId));
-            for (Map.Entry<String,Long> share : Rules.equalSplit(value.amountPaise,value.participantIds).entrySet())
-                insert("recurring_contributions",values("cycle_id",id,"group_id",value.groupId,"user_id",share.getKey(),"share_paise",share.getValue(),"paid",false));
-            return cycle(id);
+            return insertCycle(value,year,month);
+        },executor,callback);
+    }
+    private RecurringBillCycle insertCycle(RecurringBill value,int year,int month) {
+        String id=UUID.randomUUID().toString();
+        insert("recurring_cycles",values("id",id,"bill_id",value.id,"group_id",value.groupId,"year",year,"month",month,"due_date",Rules.dueDate(year,month,value.dueDay),"amount_paise",value.amountPaise,"handler_id",value.handlerId));
+        for (Map.Entry<String,Long> share : Rules.equalSplit(value.amountPaise,value.participantIds).entrySet())
+            insert("recurring_contributions",values("cycle_id",id,"group_id",value.groupId,"user_id",share.getKey(),"share_paise",share.getValue(),"paid",false));
+        return cycle(id);
+    }
+    private boolean validTemplate(RecurringBill value) {
+        for(String id:value.participantIds) if(query("SELECT user_id FROM group_members WHERE group_id=? AND user_id=? AND status='ACTIVE'",c->c.getString(0),value.groupId,id).isEmpty()) return false;
+        return value.handlerId==null || !query("SELECT user_id FROM group_members WHERE group_id=? AND user_id=? AND status='ACTIVE'",c->c.getString(0),value.groupId,value.handlerId).isEmpty();
+    }
+    private int generate(RecurringBill value,long now) {
+        if(!value.active || !validTemplate(value)) return 0;
+        int current=RecurringSchedule.month(now);
+        // Early next-month due dates need their lead-window cycle before the month changes.
+        if(current<9999*12+11 && RecurringSchedule.reminderDue(now,RecurringSchedule.due(current+1,value.dueDay),value.reminderLeadDays)) current++;
+        int next=one("SELECT next_month FROM recurring_schedule WHERE bill_id=?",c->c.getInt(0),value.id),count=0;
+        for(int m=next;m<=current;m++) {
+            if(query("SELECT id FROM recurring_cycles WHERE bill_id=? AND year=? AND month=?",c->c.getString(0),value.id,String.valueOf(m/12),String.valueOf(m%12+1)).isEmpty()) { insertCycle(value,m/12,m%12+1); count++; }
+        }
+        if(next<=current) db().update("recurring_schedule",values("next_month",current+1),"bill_id=?",new String[]{value.id});
+        return count;
+    }
+    private List<RecurringBill> accessibleBills(String actorId) {
+        Rules.id(actorId);
+        return query("SELECT b.* FROM recurring_bills b JOIN group_members m ON m.group_id=b.group_id WHERE m.user_id=? AND m.status='ACTIVE' ORDER BY b.title,b.id",this::bill,actorId);
+    }
+    @Override public void ensureCycles(String actorId,long now,Executor executor,RepositoryCallback<Integer> callback) {
+        submit(true,()->{ int count=0; for(RecurringBill value:accessibleBills(actorId)) count+=generate(value,now);return count; },executor,callback);
+    }
+    @Override public ObservableQuery<RecurringSnapshot> observeRecurring(String actorId) {
+        return observe(()->{
+            List<GroupDetails> groups=new ArrayList<>();
+            for(Group group:query("SELECT g.* FROM groups g JOIN group_members m ON m.group_id=g.id WHERE m.user_id=? AND m.status='ACTIVE' ORDER BY g.name",this::group,Rules.id(actorId))) groups.add(details(actorId,group,true));
+            List<RecurringBill> bills=accessibleBills(actorId);Map<String,List<RecurringBillCycle>> cycles=new HashMap<>();Map<String,String> names=new HashMap<>();
+            for(GroupDetails group:groups) for(MemberIdentity m:group.members) names.put(m.id,m.username);
+            for(RecurringBill bill:bills) {
+                List<RecurringBillCycle> history=query("SELECT * FROM recurring_cycles WHERE bill_id=? ORDER BY year DESC,month DESC",this::cycle,bill.id);cycles.put(bill.id,history);
+                Set<String> ids=new HashSet<>(bill.participantIds);if(bill.handlerId!=null) ids.add(bill.handlerId);
+                for(RecurringBillCycle cycle:history) { if(cycle.handlerId!=null) ids.add(cycle.handlerId);for(RecurringBillContribution c:cycle.contributions) ids.add(c.userId); }
+                for(String id:ids) names.put(id,user(id).username);
+            }
+            return new RecurringSnapshot(groups,bills,cycles,names);
+        });
+    }
+    @Override public void claimReminders(String actorId,long now,Executor executor,RepositoryCallback<List<BillReminder>> callback) {
+        submit(true,()->{
+            List<BillReminder> result=new ArrayList<>();
+            for(RecurringBill bill:accessibleBills(actorId)) if(bill.active) {
+                generate(bill,now);
+                for(RecurringBillCycle cycle:query("SELECT * FROM recurring_cycles WHERE bill_id=?",this::cycle,bill.id)) {
+                    if(!RecurringSchedule.reminderDue(now,cycle.dueDate,bill.reminderLeadDays)) continue;
+                    for(RecurringBillContribution c:cycle.contributions) if(c.userId.equals(actorId) && !c.paid) {
+                        ContentValues receipt=values("cycle_id",cycle.id,"user_id",actorId);
+                        if(db().insertWithOnConflict("recurring_reminders",null,receipt,SQLiteDatabase.CONFLICT_IGNORE)!=-1)
+                            result.add(new BillReminder(bill.id,cycle.id,bill.title,group(bill.groupId).name,cycle.dueDate));
+                    }
+                }
+            }
+            return Collections.unmodifiableList(result);
         },executor,callback);
     }
     @Override public void setContributionPaid(String actorId, String cycleId, String userId, boolean paid, Executor executor, RepositoryCallback<Boolean> callback) {

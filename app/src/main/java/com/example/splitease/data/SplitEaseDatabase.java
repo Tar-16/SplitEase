@@ -4,9 +4,9 @@ import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
-/** Additive migrations: v1 accounting, v2 recurring bills, v3 original creator attribution. */
+/** Additive migrations: v1 accounting, v2 recurring bills, v3 original creator attribution, v4 recurring cursors/receipts. */
 public final class SplitEaseDatabase extends SQLiteOpenHelper {
-    public static final int VERSION = 3;
+    public static final int VERSION = 4;
     public SplitEaseDatabase(Context context) { this(context, "splitease.db", VERSION); }
     public SplitEaseDatabase(Context context, String name) { this(context, name, VERSION); }
     // Package-visible version selection permits a real v1 -> v2 migration test.
@@ -19,6 +19,7 @@ public final class SplitEaseDatabase extends SQLiteOpenHelper {
         createCore(db);
         if (targetVersion >= 2) createRecurring(db);
         if (targetVersion >= 3) addCreator(db);
+        if (targetVersion >= 4) addRecurringSchedule(db);
     }
     private final int targetVersion;
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
@@ -26,9 +27,17 @@ public final class SplitEaseDatabase extends SQLiteOpenHelper {
             throw new IllegalStateException("Unsupported migration " + oldVersion + " -> " + newVersion);
         if (oldVersion < 2 && newVersion >= 2) createRecurring(db);
         if (oldVersion < 3 && newVersion >= 3) addCreator(db);
+        if (oldVersion < 4 && newVersion >= 4) addRecurringSchedule(db);
     }
     @Override public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         throw new IllegalStateException("Database downgrade would risk data loss");
+    }
+    private static void addRecurringSchedule(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE recurring_schedule (bill_id TEXT PRIMARY KEY NOT NULL REFERENCES recurring_bills(id) ON DELETE CASCADE, next_month INTEGER NOT NULL)");
+        int month=com.example.splitease.domain.RecurringSchedule.month(System.currentTimeMillis());
+        // Existing cycles are authoritative. No invented history before first known cycle.
+        db.execSQL("INSERT INTO recurring_schedule SELECT b.id,COALESCE((SELECT MIN(year*12+month-1) FROM recurring_cycles c WHERE c.bill_id=b.id),?) FROM recurring_bills b",new Object[]{month});
+        db.execSQL("CREATE TABLE recurring_reminders (cycle_id TEXT NOT NULL REFERENCES recurring_cycles(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(cycle_id,user_id))");
     }
     private static void addCreator(SQLiteDatabase db) {
         // SQLite permits adding a nullable FK column while foreign keys are enabled.

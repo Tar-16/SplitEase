@@ -1,6 +1,6 @@
 # SplitEase
 
-Java Android expense-sharing app for Indian users. Milestone 6 adds settlement suggestions, manual payment records/corrections and optional UPI app handoff to existing expenses and groups. Local authentication and profiles are preserved. Recurring remains a placeholder. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase, OCR and notification scheduling are not included. UPI handoff does not verify payments.
+Java Android expense-sharing app for Indian users. Milestone 7 adds monthly shared-bill tracking, contribution history and local reminders alongside the existing expenses, groups and settlements. Local authentication and profiles are preserved. Recurring now tracks independent monthly contributions. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase and OCR are not included. UPI handoff does not verify payments.
 
 ## Setup and toolchain
 
@@ -12,7 +12,7 @@ Open the directory in Android Studio supporting AGP 9.2 (Panda 4 or newer). Inst
 - The existing daemon JVM configuration selects JDK 25; verification used JDK 25. Java application code remains Java 17.
 - Existing dependencies: AppCompat 1.7.1, Core 1.17.0, Activity 1.12.4, Fragment 1.8.9, Navigation Fragment/UI 2.9.8, Material Components 1.13.0.
 - Added: Bouncy Castle `bcprov-jdk18on:1.83` for portable Argon2id across API 24+, AndroidX Test Runner 1.6.2 and AndroidX Test JUnit 1.2.1. JUnit 4.13.2 remains for local tests.
-- Milestone 3 adds Lifecycle ViewModel/LiveData 2.11.0; application version name is 0.6.0.
+- Lifecycle ViewModel/LiveData 2.11.0; WorkManager 2.12.0 for local reminders; application version name 0.7.0.
 - XML Android Views and ViewBinding; no Kotlin application sources or Compose. Dependencies may internally use Kotlin.
 
 ```sh
@@ -28,21 +28,22 @@ Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Initial dependency resol
 ```text
 app/src/main/java/com/example/splitease/
   SplitEaseApplication.java   Composition root; opens database asynchronously
-  ui/                         Activity, auth, Profile, Groups and Expenses screens/ViewModels, Recurring placeholder
+  ui/                         Activity, auth, Profile, Groups and Expenses screens/ViewModels, Recurring tracker
   auth/                       Replaceable AuthService, LocalAuthService and SessionStore
   model/                      Immutable User, Group, GroupMember, Expense,
                               ExpenseSplit, Settlement, RecurringBill,
                               RecurringBillCycle, RecurringBillContribution
-  domain/                     Rules (validation/equal splitting/monthly dates), Balances
+  domain/                     Rules, Balances, SettlementCalculator, RecurringSchedule
   repository/                 Five feature interfaces, callbacks, observable queries
   data/                       SplitEaseDatabase, SqliteRepositories, PasswordHasher
+  reminders/                  WorkManager checks and session-scoped notifications
   util/                       Exact INR display formatting
 app/src/test/                 Android-independent monetary and scheduling tests
 app/src/androidTest/          Real SQLite and navigation/recreation tests
 app/src/main/res/xml/         Database backup/transfer exclusions
 ```
 
-`SplitEaseApplication` owns one app-scoped `SqliteRepositories` instance and exposes only feature interfaces through `users()`, `groups()`, `expenses()`, `settlements()` and `recurringBills()`. Database initialization errors are logged and accessible through `initializationError()`; each repository call also reports its own failure. Profile consumes the authenticated account through AuthService and an Activity-scoped AuthViewModel; Groups uses a Fragment-scoped session-bound GroupsViewModel; Recurring remains a placeholder.
+`SplitEaseApplication` owns one app-scoped `SqliteRepositories` instance and exposes only feature interfaces through `users()`, `groups()`, `expenses()`, `settlements()` and `recurringBills()`. Database initialization errors are logged and accessible through `initializationError()`; each repository call also reports its own failure. Profile consumes the authenticated account through AuthService and an Activity-scoped AuthViewModel; Groups uses a Fragment-scoped session-bound GroupsViewModel; Recurring now tracks independent monthly contributions.
 
 Repository operations return promptly and execute on a single database worker. Validation, membership checks and multi-table writes run in one transaction. Failed operations roll back and report `onError`; successful operations deliver exactly one non-null result. Missing records report an error rather than null. Caller-supplied callback executors determine delivery threads and must be serial, remain accepting, and run callbacks that do not throw. Use a main-thread executor for UI callbacks, with lifecycle checks. The original callback/observable contracts are retained.
 
@@ -70,11 +71,11 @@ The editor accepts a title, positive INR amount (plain digits with up to two dec
 
 `GroupDetails` includes immutable expense, balance and public-name snapshots in the same worker read. It retains current members and historical identities referenced by expenses or recorded settlements. Balances derive from the existing `Balances` domain logic; positive is owed to the member, negative is owed by the member, zero is settled. These aggregate nets do not imply specific debtor/creditor payment pairs. They are never persisted and recurring contributions never enter them. Home and Detail refresh after mutations and account switches. The summary total means all expense amounts, not outstanding debt; latest expense date is an actual expense date, not an invented modification timestamp.
 
-Schema remains version 3; there are no new dependencies, tables or migrations. No settlement entry, recommendations, UPI payments, OCR, recurring UI or Firebase were implemented.
+Milestone 5 required no schema or dependency changes. Milestones 6–7 extend that release with settlements/UPI handoff and recurring tracking, described below. OCR and Firebase remain outside scope.
 
 ## Schema and migrations
 
-Database: app-private `splitease.db`, version **3**. Foreign keys are enabled on every connection. All standalone entity identifiers are canonical String UUIDs validated at repository boundaries. Association rows use composite keys of the referenced UUIDs rather than redundant identifiers. Financial columns require SQLite integer storage; Java uses `long` paise.
+Database: app-private `splitease.db`, version **4**. Foreign keys are enabled on every connection. All standalone entity identifiers are canonical String UUIDs validated at repository boundaries. Association rows use composite keys of the referenced UUIDs rather than redundant identifiers. Financial columns require SQLite integer storage; Java uses `long` paise.
 
 | Table | Purpose and constraints |
 | --- | --- |
@@ -88,10 +89,12 @@ Database: app-private `splitease.db`, version **3**. Foreign keys are enabled on
 | `recurring_participants` | Normalized bill/member association |
 | `recurring_cycles` | Historical amount, due date, handler; unique `(bill_id,year,month)` |
 | `recurring_contributions` | Historical participant shares and paid flag, keyed by `(cycle_id,user_id)` |
+| `recurring_schedule` | One persisted next-month cursor per bill |
+| `recurring_reminders` | Durable unique cycle/recipient notification receipt |
 
 Group/date indexes support expense and settlement lists; membership, active-bill and contribution indexes support scoped queries. Composite foreign keys prevent splits/contributions from referencing a different group's members.
 
-Migration chain: v1 creates core accounting tables; v2 adds recurring tables; v3 adds immutable creator attribution. New databases apply the same chain. Upgrades are additive and transactional under SQLiteOpenHelper; unsupported upgrades/downgrades throw instead of deleting data. Because v1/v2 did not record original creator identity, the v3 migration backfills their current admin as the best available attribution. New groups retain their actual creator through admin transfers. Milestone 1 shipped no database schema.
+Migration chain: v1 creates core accounting tables; v2 adds recurring tables; v3 adds immutable creator attribution; v4 adds recurring cursors and reminder receipts. New databases apply the same chain. Upgrades are additive and transactional under SQLiteOpenHelper; unsupported upgrades/downgrades throw instead of deleting data. Because v1/v2 did not record original creator identity, the v3 migration backfills their current admin as the best available attribution. New groups retain their actual creator through admin transfers. Milestone 1 shipped no database schema.
 
 Deletion semantics are explicit: referenced users cannot be deleted. Leaving changes membership status and preserves financial references. Bills with historical cycles cannot be deleted; deactivate them instead. Group deletion also fails if recurring history would be orphaned. Groups without recurring history can be deleted with their owned records in a transaction. No user-facing deletion workflow is introduced.
 
@@ -115,7 +118,7 @@ Every cycle snapshots amount, handler, participants and equal shares. Later bill
 
 Bill templates require active participants/handler when active. If someone leaves, the template must be updated before creating another cycle; historical cycles remain intact. Deactivating a template is still possible after departures. An optional handler may be null; no handler-selection workflow is inferred.
 
-Dates use UTC epoch milliseconds. Monthly scheduling uses year/month (1–12) and due day (1–31); days beyond month end clamp to the last day. The resulting due date is a UTC calendar-date representation, not a notification instant. Bill lead time and all participant IDs are stored for future reminders; timezone-aware notifications and scheduling are not implemented.
+Dates use UTC epoch milliseconds. Monthly scheduling uses year/month (1–12) and due day (1–31); days beyond month end clamp to the last day. The resulting due date is a UTC calendar-date representation, not a notification instant. Bill lead time and participant IDs support M7’s UTC reminder windows and WorkManager scheduling.
 
 ## Local credentials
 
@@ -127,7 +130,7 @@ These parameters follow the [OWASP password-storage guidance](https://cheatsheet
 
 Signup validates username presence, normalized email format and matching passwords. A live checklist displays all five requirements: minimum eight characters, uppercase, lowercase, number and non-whitespace special character. Password fields have visibility toggles; validation failures are visible; submissions show loading and cannot be duplicated. Login checks the real Argon2id credential through UserRepository with a generic incorrect-email-or-password error. No reset link, hardcoded credential, attempt counter or lockout exists.
 
-The existing schema remains **version 3** with **no new migration**. UserRepository gained normalized `findUserByEmail`; duplicate-account failures use a storage-independent typed error. SQLite UNIQUE constraints remain authoritative. Registration validation is in the auth boundary; existing Milestone 2 accounts can still log in even if their older password would not meet the new signup policy. Username/email normalization remains trim + Locale.ROOT lowercase for both create and lookup.
+The existing authentication schema remains unchanged; overall database version is now **4** with the additive M7 recurring migration. UserRepository gained normalized `findUserByEmail`; duplicate-account failures use a storage-independent typed error. SQLite UNIQUE constraints remain authoritative. Registration validation is in the auth boundary; existing Milestone 2 accounts can still log in even if their older password would not meet the new signup policy. Username/email normalization remains trim + Locale.ROOT lowercase for both create and lookup.
 
 `AuthService` is the replaceable authentication/session interface. `LocalAuthService` uses the existing asynchronous UserRepository, coordinates on its own serial worker, maps internal errors to safe codes and publishes session snapshots through the existing ObservableQuery pattern. `AuthViewModel` observes on the main thread and exposes lifecycle-aware LiveData. Fragments bind views and forward actions; they do not query SQL, hash passwords or access preferences. AuthService derives the profile owner from its own authenticated snapshot. Logout invalidates in-flight authentication callbacks so a late registration/login cannot restore a logged-out session.
 
@@ -141,9 +144,7 @@ Local accounts/data are device-specific. Firebase will start fresh; no local-acc
 
 ## Verification
 
-Milestone 6: final build passed, **20/20 local tests** and **29/29 API 37 emulator tests** passed. Lint: **0 errors, 13 pre-existing warnings**, no new warnings. Focused calculator and emulator tests also passed. Coverage includes exact arithmetic, settlement caps, duplicate acknowledgement, history, authorization, persistence after repository reopening, account switching, Activity recreation and UPI handoff safety.
-
-See [Milestone 6 verification](docs/milestone-6-verification.md) for results, file inventory, screenshots and remaining manual checks. Earlier milestone reports remain historical evidence.
+Milestone 7: **23/23 local tests**, **35/35 API 37 emulator tests**, build/install passed; final lint **0 errors, 12 pre-existing warnings**. Force-stop/relaunch retained the session, bill and Paid status; light/dark, landscape and 1.3 font-scale checks passed. Details are recorded in [the current report](docs/milestone-7-verification.md). Earlier milestone reports remain historical evidence. Use the build/test commands above; emulator coverage is Android 17 / API 37, with API 24/physical-device coverage still pending.
 
 ## Settlements and UPI (Milestone 6)
 
@@ -153,8 +154,22 @@ The pure-Java calculator greedily matches largest remaining debts and credits, b
 
 Recipient UPI metadata is exposed only through the membership-authorized settlement snapshot for suggested recipients. UPI IDs are unverified. The chooser receives an encoded INR intent for the selected suggestion’s full amount; changing the manual record amount does not change that intent. Returning or cancelling never records or confirms payment. Missing UPI apps/IDs leave “Already paid? Record it” available. No bank integration, transaction verification or automatic reconciliation exists.
 
-No new dependencies or schema migration; SQLite stays version 3. Current verification is documented in [Milestone 6 verification](docs/milestone-6-verification.md). Earlier reports are historical evidence.
+Milestone 6 added no dependencies or migration. Milestone 7 adds WorkManager 2.12.0 and schema version 4. Milestone 6 verification is documented in [Milestone 6 verification](docs/milestone-6-verification.md). Earlier reports are historical evidence.
+
+## Recurring shared bills (Milestone 7)
+
+The Recurring tab lists bills across current groups with an optional group filter. Create/edit name, exact positive INR amount, current participants, handler, due day 1–31 and reminder lead time 0–31 days (for example 1, 3 or 7). Bills can be deactivated and reactivated. Each bill shows the current cycle’s paid progress and historical/upcoming cycles. Any current member can mark/unmark any contribution after confirmation; paid means contributed to the handler. This never creates expenses/settlements or changes net balances.
+
+Cycles snapshot amount, handler, participants, exact sorted-UUID shares and clamped due date. Generation is transactional/idempotent and runs on load/resume and background checks. The schedule begins in the creation month and fills missed months through the current UTC month. A next-month cycle is generated early when its reminder lead window opens. Existing snapshots never change. Before edits, missing months are generated using the old template; otherwise missing months use the latest available template. There is no historical template-version audit trail.
+
+Deactivated bills preserve history without generating. Reactivation resumes in the current month and skips inactive gaps. If template members/handler have left, generation pauses with an actionable message; edit current identities to resume, or deactivate while retaining the historical template. UTC calendar months/dates are consistent with existing records; day 31 clamps to shorter month end.
+
+Schema 4 adds only recurring_schedule (generation cursor) and recurring_reminders (unique cycle/recipient receipt). Existing bills start from their earliest known cycle, or the upgrade month if no history exists; earlier history is not invented. Existing accounts, groups and accounting records remain intact.
+
+WorkManager 2.12.0 runs an immediate check on session/resume/settings updates plus a unique 12-hour periodic check that survives normal process death/reboot. Android may delay work; there is no exact-minute guarantee. Force-stopped apps cannot deliver background reminders until reopened. Notifications identify bill, group and due date, and open an authenticated, membership-checked bill destination. Permission/global/channel denial prevents claiming reminders; notification settings remain accessible.
+
+Local phase: only the currently signed-in unpaid participant receives a reminder during the lead window through the due day. Other local accounts receive eligible reminders when signed in, so this device cannot notify all accounts simultaneously or reach other devices. Account changes clear notifications and cancel prior work; paid/deactivated/inaccessible bills are pruned. Lock-screen public content is generic. Durable receipts avoid repeat reminders after restart, account switching or paid/unpaid toggles. Receipts are claimed before posting: a crash or permission race can miss a reminder rather than deliver a duplicate. Android notifications are advisory; the app remains the source for contribution status.
 
 ## Remaining scope
 
-Minimum-SDK/physical-device and real third-party UPI app testing remain necessary. Recurring UI, OCR, notifications and Firebase remain future work; no subsequent milestone is started. Firebase Auth/Firestore will use fresh accounts/data. See AGENTS.md for architecture rules.
+API 24/physical-device coverage and exhaustive accessibility/device testing remain future checks. Receipt OCR and Firebase are not implemented. Firebase Auth/Firestore will use fresh accounts/data. No work beyond Milestone 7 is included. See AGENTS.md for architecture rules.

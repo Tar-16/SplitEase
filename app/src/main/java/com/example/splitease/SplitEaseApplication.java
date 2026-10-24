@@ -14,11 +14,13 @@ import com.example.splitease.repository.*;
 public final class SplitEaseApplication extends Application {
     private SqliteRepositories repositories;
     private AuthService auth;
+    private com.example.splitease.reminders.RecurringReminders reminders;
     private volatile Exception initializationError;
     @Override public void onCreate() {
         super.onCreate();
         repositories = new SqliteRepositories(this);
         auth = new LocalAuthService(repositories, new PreferencesSessionStore(this));
+        reminders=new com.example.splitease.reminders.RecurringReminders(this);
         Handler main = new Handler(Looper.getMainLooper());
         repositories.initialize(command -> main.post(command), new RepositoryCallback<Boolean>() {
             @Override public void onSuccess(Boolean result) { initializationError = null; }
@@ -28,6 +30,7 @@ public final class SplitEaseApplication extends Application {
             }
         });
     }
+    public com.example.splitease.reminders.RecurringReminders reminders() { return reminders; }
     public AuthService auth() { return auth; }
     public UserRepository users() { return repositories; }
     public GroupRepository groups() { return repositories; }

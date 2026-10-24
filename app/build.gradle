@@ -8,7 +8,7 @@ android {
         minSdk = 24
         targetSdk = 37
         versionCode = 1
-        versionName = '0.6.0'
+        versionName = '0.7.0'
         testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
     }
     buildFeatures { viewBinding = true }
@@ -35,6 +35,7 @@ dependencies {
     implementation 'org.bouncycastle:bcprov-jdk18on:1.83'
     implementation 'androidx.lifecycle:lifecycle-viewmodel:2.11.0'
     implementation 'androidx.lifecycle:lifecycle-livedata:2.11.0'
+    implementation 'androidx.work:work-runtime:2.12.0'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'

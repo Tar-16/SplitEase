@@ -287,6 +287,70 @@ public class SqliteRepositoriesTest {
             assertEquals(1,count(helper.getWritableDatabase(),"expenses"));
         }
     }
+    @Test public void recurringBackfillSnapshotsPauseAndReactivationAreTransactional() throws Exception {
+        AtomicLong clock=new AtomicLong(Rules.dueDate(2027,1,10));repo.close();repo=new SqliteRepositories(context,name,clock::get);seed();
+        String id=UUID.randomUUID().toString();RecurringBill original=new RecurringBill(id,group,"Internet",10001,31,Arrays.asList(b,a),a,3,true);
+        await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(a,original,callbacks,cb));
+        assertEquals(1,snapshot(repo.observeCycles(id)).size());
+        clock.set(Rules.dueDate(2027,4,10));
+        assertEquals(3,(int)await((RepositoryCallback<Integer> cb)->repo.ensureCycles(b,clock.get(),callbacks,cb)));
+        assertEquals(0,(int)await((RepositoryCallback<Integer> cb)->repo.ensureCycles(a,clock.get(),callbacks,cb)));
+        List<RecurringBillCycle> history=snapshot(repo.observeCycles(id));assertEquals(4,history.size());assertEquals(Rules.dueDate(2027,2,28),history.get(1).dueDate);
+        assertEquals(5001,history.get(0).contributions.get(0).sharePaise);assertEquals(5000,history.get(0).contributions.get(1).sharePaise);
+        String firstCycleId=history.get(0).id;await((RepositoryCallback<Boolean> cb)->repo.setContributionPaid(b,firstCycleId,a,true,callbacks,cb));
+        RecurringBill changed=new RecurringBill(id,group,"Internet new",30001,30,Arrays.asList(b),b,7,true);
+        await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(b,changed,callbacks,cb));clock.set(Rules.dueDate(2027,5,10));
+        await((RepositoryCallback<Integer> cb)->repo.ensureCycles(a,clock.get(),callbacks,cb));history=snapshot(repo.observeCycles(id));assertEquals(10001,history.get(0).amountPaise);assertEquals(30001,history.get(4).amountPaise);assertEquals(b,history.get(4).handlerId);assertTrue(history.get(0).contributions.get(0).paid);
+        RecurringBill off=new RecurringBill(id,group,changed.title,changed.amountPaise,30,changed.participantIds,b,7,false);
+        await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(a,off,callbacks,cb));clock.set(Rules.dueDate(2027,8,10));assertEquals(0,(int)await((RepositoryCallback<Integer> cb)->repo.ensureCycles(b,clock.get(),callbacks,cb)));
+        await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(a,changed,callbacks,cb));history=snapshot(repo.observeCycles(id));assertEquals(6,history.size());assertEquals(8,history.get(5).month);
+        repo.close();repo=new SqliteRepositories(context,name,clock::get);assertEquals(6,snapshot(repo.observeCycles(id)).size());
+        assertTrue(snapshot(repo.observeExpenses(group)).isEmpty());assertTrue(snapshot(repo.observeSettlements(group)).isEmpty());assertTrue(snapshot(repo.observeBalances(group)).isEmpty());
+    }
+    @Test public void recurringRemindersAreRecipientScopedDeduplicatedAndRespectStatus() throws Exception {
+        AtomicLong clock=new AtomicLong(Rules.dueDate(2027,1,28));repo.close();repo=new SqliteRepositories(context,name,clock::get);seed();
+        String id=UUID.randomUUID().toString();RecurringBill bill=new RecurringBill(id,group,"Rent",10000,1,Arrays.asList(a,b),a,7,true);
+        await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(a,bill,callbacks,cb));
+        List<RecurringBillCycle> cycles=snapshot(repo.observeCycles(id));assertEquals(2,cycles.size());assertEquals(2,cycles.get(1).month);
+        assertEquals(1,await((RepositoryCallback<List<BillReminder>> cb)->repo.claimReminders(a,clock.get(),callbacks,cb)).size());
+        assertTrue(await((RepositoryCallback<List<BillReminder>> cb)->repo.claimReminders(a,clock.get(),callbacks,cb)).isEmpty());
+        assertTrue(await((RepositoryCallback<List<BillReminder>> cb)->repo.claimReminders(outsider,clock.get(),callbacks,cb)).isEmpty());
+        await((RepositoryCallback<Boolean> cb)->repo.setContributionPaid(a,cycles.get(1).id,b,true,callbacks,cb));
+        assertTrue(await((RepositoryCallback<List<BillReminder>> cb)->repo.claimReminders(b,clock.get(),callbacks,cb)).isEmpty());
+        await((RepositoryCallback<Boolean> cb)->repo.setContributionPaid(a,cycles.get(1).id,b,false,callbacks,cb));
+        assertEquals(1,await((RepositoryCallback<List<BillReminder>> cb)->repo.claimReminders(b,clock.get(),callbacks,cb)).size());
+        repo.close();repo=new SqliteRepositories(context,name,clock::get);assertTrue(await((RepositoryCallback<List<BillReminder>> cb)->repo.claimReminders(a,clock.get(),callbacks,cb)).isEmpty());
+        assertTrue(snapshot(repo.observeRecurring(outsider)).bills.isEmpty());
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(outsider,bill,callbacks,cb)));
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<Boolean> cb)->repo.setContributionPaid(outsider,cycles.get(1).id,a,true,callbacks,cb)));
+    }
+    @Test public void recurringDeparturesPauseGenerationAndAllowDeactivation() throws Exception {
+        AtomicLong clock=new AtomicLong(Rules.dueDate(2027,1,10));repo.close();repo=new SqliteRepositories(context,name,clock::get);seed();
+        String id=UUID.randomUUID().toString();RecurringBill bill=new RecurringBill(id,group,"Utilities",10,15,Arrays.asList(a,b),b,1,true);
+        await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(a,bill,callbacks,cb));
+        await((RepositoryCallback<Boolean> cb)->repo.leaveGroup(b,group,System.currentTimeMillis(),callbacks,cb));clock.set(Rules.dueDate(2027,3,10));
+        assertEquals(0,(int)await((RepositoryCallback<Integer> cb)->repo.ensureCycles(a,clock.get(),callbacks,cb)));
+        RecurringSnapshot detail=snapshot(repo.observeRecurring(a));assertEquals("bob",detail.names.get(b));assertEquals(1,detail.cycles.get(id).size());
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(a,bill,callbacks,cb)));
+        RecurringBill off=new RecurringBill(id,group,bill.title,10,15,bill.participantIds,b,1,false);await((RepositoryCallback<RecurringBill> cb)->repo.saveBill(a,off,callbacks,cb));
+        assertTrue(snapshot(repo.observeRecurring(b)).bills.isEmpty());
+    }
+    @Test public void recurringV3MigrationRetainsCyclesAndAddsIdempotentCursor() throws Exception {
+        group=UUID.randomUUID().toString();String migration="recurring-v3-"+UUID.randomUUID()+".db";
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration,3)) {
+            SQLiteDatabase db=helper.getWritableDatabase();
+            db.execSQL("INSERT INTO users VALUES (?,?,?,NULL,X'01',X'02','test',1,1,1)",new Object[]{a,"Old","old@example.com"});
+            db.execSQL("INSERT INTO groups(id,name,type,admin_id,created_at,creator_id) VALUES (?,?,?,?,?,?)",new Object[]{group,"Old flat","FLAT",a,100,a});
+            db.execSQL("INSERT INTO group_members VALUES (?,?,'ACTIVE',100,NULL)",new Object[]{group,a});
+            String bill=UUID.randomUUID().toString(),cycle=UUID.randomUUID().toString();
+            db.execSQL("INSERT INTO recurring_bills VALUES (?,?,?,100,31,?,3,1)",new Object[]{bill,group,"Old WiFi",a});
+            db.execSQL("INSERT INTO recurring_participants VALUES (?,?,?)",new Object[]{bill,group,a});
+            db.execSQL("INSERT INTO recurring_cycles VALUES (?,?,?,2026,2,?,100,?)",new Object[]{cycle,bill,group,Rules.dueDate(2026,2,28),a});
+            db.execSQL("INSERT INTO recurring_contributions VALUES (?,?,?,100,1)",new Object[]{cycle,group,a});
+        }
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration)) {SQLiteDatabase db=helper.getWritableDatabase();assertEquals(4,db.getVersion());assertEquals(1,count(db,"recurring_cycles"));assertEquals(1,count(db,"recurring_schedule"));assertEquals(0,count(db,"recurring_reminders"));try(Cursor c=db.rawQuery("SELECT paid FROM recurring_contributions",null)){assertTrue(c.moveToFirst());assertEquals(1,c.getInt(0));}}
+        context.deleteDatabase(migration);
+    }
     @Test public void recurringSnapshotsRemainSeparateAndUnique() throws Exception {
         seed(); String id=UUID.randomUUID().toString();
         RecurringBill bill=new RecurringBill(id,group,"WiFi",99900,31,Arrays.asList(a,b),a,3,true);
@@ -302,7 +366,7 @@ public class SqliteRepositoriesTest {
         assertEquals(120000,second.amountPaise); assertEquals(1,second.contributions.size()); assertFalse(second.contributions.get(0).paid);
         repo.close(); repo=new SqliteRepositories(context,name);
         List<RecurringBillCycle> cycles=snapshot(repo.observeCycles(id));
-        assertEquals(2,cycles.size()); assertEquals(99900,cycles.get(0).amountPaise); assertEquals(a,cycles.get(0).handlerId);
+        assertEquals(3,cycles.size()); assertEquals(99900,cycles.get(0).amountPaise); assertEquals(a,cycles.get(0).handlerId);
         assertEquals(49950,cycles.get(0).contributions.get(0).sharePaise); assertTrue(cycles.get(0).contributions.get(0).paid);
         assertTrue(snapshot(repo.observeExpenses(group)).isEmpty()); assertTrue(snapshot(repo.observeSettlements(group)).isEmpty()); assertTrue(snapshot(repo.observeBalances(group)).isEmpty());
         assertThrows(ExecutionException.class, () -> await((RepositoryCallback<Boolean> c) -> repo.deleteBill(a,id,callbacks,c)));
@@ -321,7 +385,7 @@ public class SqliteRepositoriesTest {
         }
         try(SplitEaseDatabase upgraded=new SplitEaseDatabase(context,migrationName)) {
             SQLiteDatabase db=upgraded.getWritableDatabase();
-            assertEquals(3,db.getVersion()); assertEquals(1,count(db,"users")); assertEquals(1,count(db,"groups")); assertEquals(0,count(db,"recurring_cycles"));
+            assertEquals(4,db.getVersion()); assertEquals(1,count(db,"users")); assertEquals(1,count(db,"groups")); assertEquals(0,count(db,"recurring_cycles"));
             try(Cursor creator=db.rawQuery("SELECT creator_id FROM groups",null)) { assertTrue(creator.moveToFirst()); assertEquals(a,creator.getString(0)); }
             try(Cursor c=db.rawQuery("PRAGMA foreign_key_check",null)) { assertEquals(0,c.getCount()); }
         }

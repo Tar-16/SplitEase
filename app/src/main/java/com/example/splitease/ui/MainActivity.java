@@ -65,13 +65,13 @@ public final class MainActivity extends AppCompatActivity {
         boolean authenticated=session.status == SessionState.Status.SIGNED_IN;
         String userId=authenticated ? session.user.id : null;
         NavDestination current=navigation.getCurrentDestination();
-        boolean allowed=current != null && (authenticated ? (isHome(current.getId()) || current.getId()==R.id.create_group || current.getId()==R.id.group_detail || current.getId()==R.id.expense_screen || current.getId()==R.id.settlements_screen) : current.getId()==R.id.login || current.getId()==R.id.signup);
+        boolean allowed=current != null && (authenticated ? (isHome(current.getId()) || current.getId()==R.id.create_group || current.getId()==R.id.group_detail || current.getId()==R.id.expense_screen || current.getId()==R.id.settlements_screen || current.getId()==R.id.bill_screen) : current.getId()==R.id.login || current.getId()==R.id.signup);
         if (!allowed || !Objects.equals(navigationUserId,userId)) {
             binding.mainContent.setVisibility(View.INVISIBLE);
             synchronizing=true;
             try {
                 if (current != null) {
-                    for (int id : new int[]{R.id.groups,R.id.recurring,R.id.profile,R.id.login,R.id.signup,R.id.create_group,R.id.group_detail,R.id.expense_screen,R.id.settlements_screen}) navigation.clearBackStack(id);
+                    for (int id : new int[]{R.id.groups,R.id.recurring,R.id.profile,R.id.login,R.id.signup,R.id.create_group,R.id.group_detail,R.id.expense_screen,R.id.settlements_screen,R.id.bill_screen}) navigation.clearBackStack(id);
                 }
                 int target=authenticated ? R.id.groups : R.id.login;
                 NavGraph graph=navigation.getNavInflater().inflate(R.navigation.main_nav_graph);
@@ -83,8 +83,17 @@ public final class MainActivity extends AppCompatActivity {
             } finally { synchronizing=false; }
             binding.mainContent.setVisibility(View.VISIBLE);
         }
+        if(authenticated && getIntent().hasExtra("billId")) {
+            String bill=getIntent().getStringExtra("billId"),recipient=getIntent().getStringExtra("recipient");
+            getIntent().removeExtra("billId");getIntent().removeExtra("recipient");
+            if(userId.equals(recipient)) { try {com.example.splitease.domain.Rules.id(bill);Bundle args=new Bundle();args.putString("billId",bill);navigation.navigate(R.id.bill_screen,args);}catch(IllegalArgumentException invalid) { /* stale notification */ } }
+        }
         binding.bottomNavigation.setVisibility(authenticated && navigation.getCurrentDestination()!=null && isHome(navigation.getCurrentDestination().getId()) ? View.VISIBLE : View.GONE);
     }
+    @Override protected void onNewIntent(android.content.Intent intent) {super.onNewIntent(intent);
+        // Keep the Activity launch identity stable; only consume the notification payload.
+        getIntent().putExtra("billId",intent.getStringExtra("billId"));getIntent().putExtra("recipient",intent.getStringExtra("recipient"));synchronizeNavigation();}
+    @Override protected void onResume() {super.onResume();((com.example.splitease.SplitEaseApplication)getApplication()).reminders().refresh(false);}
     @Override protected void onSaveInstanceState(Bundle outState) {
         outState.putString("navigation_user_id",navigationUserId); super.onSaveInstanceState(outState);
     }
