@@ -287,6 +287,62 @@ public class SqliteRepositoriesTest {
             assertEquals(1,count(helper.getWritableDatabase(),"expenses"));
         }
     }
+    private byte[] receiptJpeg(int color) {
+        android.graphics.Bitmap image=android.graphics.Bitmap.createBitmap(400,800,android.graphics.Bitmap.Config.ARGB_8888);image.eraseColor(color);
+        try(java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){image.compress(android.graphics.Bitmap.CompressFormat.JPEG,88,out);return out.toByteArray();}catch(java.io.IOException impossible){throw new AssertionError(impossible);}finally{image.recycle();}
+    }
+    @Test public void receiptsArePrivateAtomicAndCleanedAfterReplacementRemovalAndExpenseDeletion() throws Exception {
+        seed();byte[] first=receiptJpeg(android.graphics.Color.WHITE),second=receiptJpeg(android.graphics.Color.LTGRAY);
+        ReceiptMetadata draft=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,first,callbacks,cb));assertNull(draft.expenseId);assertEquals(400,draft.width);assertEquals(800,draft.height);
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptImage> cb)->repo.load(b,draft.id,callbacks,cb)));
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptImage> cb)->repo.load(outsider,draft.id,callbacks,cb)));
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(outsider,group,first,callbacks,cb)));
+        String id=UUID.randomUUID().toString();Expense original=expense(id,100);
+        await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,original,ReceiptChange.replace(draft.id),callbacks,cb));
+        assertArrayEquals(first,await((RepositoryCallback<ReceiptImage> cb)->repo.load(b,draft.id,callbacks,cb)).bytes());assertEquals(id,await((RepositoryCallback<Optional<ReceiptMetadata>> cb)->repo.findForExpense(a,id,callbacks,cb)).get().expenseId);
+        ReceiptMetadata next=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(b,group,second,callbacks,cb));
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,name)) {helper.getWritableDatabase().execSQL("CREATE TRIGGER receipt_failure BEFORE UPDATE OF expense_id ON receipts BEGIN SELECT RAISE(ABORT,'injected receipt failure'); END");
+            assertThrows(ExecutionException.class,()->await((RepositoryCallback<Expense> cb)->repo.saveExpense(b,expense(id,200),ReceiptChange.replace(next.id),callbacks,cb)));
+            assertEquals(100,snapshot(repo.observeExpenses(group)).get(0).amountPaise);assertEquals(draft.id,await((RepositoryCallback<Optional<ReceiptMetadata>> cb)->repo.findForExpense(a,id,callbacks,cb)).get().id);assertArrayEquals(first,await((RepositoryCallback<ReceiptImage> cb)->repo.load(a,draft.id,callbacks,cb)).bytes());
+            assertArrayEquals(second,await((RepositoryCallback<ReceiptImage> cb)->repo.load(b,next.id,callbacks,cb)).bytes());helper.getWritableDatabase().execSQL("DROP TRIGGER receipt_failure");
+        }
+        await((RepositoryCallback<Expense> cb)->repo.saveExpense(b,expense(id,200),ReceiptChange.replace(next.id),callbacks,cb));
+        assertEquals(next.id,await((RepositoryCallback<Optional<ReceiptMetadata>> cb)->repo.findForExpense(a,id,callbacks,cb)).get().id);assertFalse(new ReceiptFiles(context,name).file(draft.id).exists());
+        await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,expense(id,200),ReceiptChange.remove(),callbacks,cb));assertFalse(await((RepositoryCallback<Optional<ReceiptMetadata>> cb)->repo.findForExpense(b,id,callbacks,cb)).isPresent());assertFalse(new ReceiptFiles(context,name).file(next.id).exists());
+        ReceiptMetadata third=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,first,callbacks,cb));await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,expense(id,200),ReceiptChange.replace(third.id),callbacks,cb));
+        await((RepositoryCallback<Boolean> cb)->repo.deleteExpense(b,id,callbacks,cb));assertFalse(new ReceiptFiles(context,name).file(third.id).exists());assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptImage> cb)->repo.load(a,third.id,callbacks,cb)));
+    }
+    @Test public void receiptHistoricalAccessMissingFilesAndRollbackOrphansRecoverSafely() throws Exception {
+        seed();byte[] jpeg=receiptJpeg(android.graphics.Color.WHITE);String id=UUID.randomUUID().toString();
+        Expense historical=new Expense(id,group,"Historical receipt",100,b,a,"Other",200,Arrays.asList(new ExpenseSplit(id,b,100)));
+        ReceiptMetadata image=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,jpeg,callbacks,cb));await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,historical,ReceiptChange.replace(image.id),callbacks,cb));
+        await((RepositoryCallback<Boolean> cb)->repo.leaveGroup(b,group,System.currentTimeMillis(),callbacks,cb));assertArrayEquals(jpeg,await((RepositoryCallback<ReceiptImage> cb)->repo.load(a,image.id,callbacks,cb)).bytes());
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptImage> cb)->repo.load(b,image.id,callbacks,cb)));
+        ReceiptFiles files=new ReceiptFiles(context,name);assertTrue(files.file(image.id).delete());assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptImage> cb)->repo.load(a,image.id,callbacks,cb)));
+        await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,historical,ReceiptChange.remove(),callbacks,cb));assertFalse(await((RepositoryCallback<Optional<ReceiptMetadata>> cb)->repo.findForExpense(a,id,callbacks,cb)).isPresent());
+        ReceiptMetadata live=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,jpeg,callbacks,cb));
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,name)){helper.getWritableDatabase().execSQL("CREATE TRIGGER stage_failure BEFORE INSERT ON receipts BEGIN SELECT RAISE(ABORT,'injected stage failure'); END");
+            assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,jpeg,callbacks,cb)));assertEquals(2,files.file(live.id).getParentFile().listFiles().length);helper.getWritableDatabase().execSQL("DROP TRIGGER stage_failure");}
+        await((RepositoryCallback<Boolean> cb)->repo.cleanUp(callbacks,cb));assertEquals(1,files.file(live.id).getParentFile().listFiles().length);assertArrayEquals(jpeg,await((RepositoryCallback<ReceiptImage> cb)->repo.load(a,live.id,callbacks,cb)).bytes());
+    }
+    @Test public void receiptStorageFailureRetryAndStartupExpiryKeepAttachedFiles() throws Exception {
+        AtomicLong clock=new AtomicLong(Rules.dueDate(2027,1,10));repo.close();repo=new SqliteRepositories(context,name,clock::get);seed();byte[] jpeg=receiptJpeg(android.graphics.Color.WHITE);
+        java.io.File directory=new ReceiptFiles(context,name).file(UUID.randomUUID().toString()).getParentFile();assertTrue(directory.createNewFile());
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,jpeg,callbacks,cb)));assertTrue(directory.delete());
+        ReceiptMetadata attached=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,jpeg,callbacks,cb));String expenseId=UUID.randomUUID().toString();await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,expense(expenseId,100),ReceiptChange.replace(attached.id),callbacks,cb));
+        ReceiptMetadata abandoned=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,jpeg,callbacks,cb));java.io.File partial=new java.io.File(directory,"abandoned.partial");assertTrue(partial.createNewFile());
+        clock.addAndGet(25*60*60*1000L);repo.close();repo=new SqliteRepositories(context,name,clock::get);await((RepositoryCallback<Boolean> cb)->repo.initialize(callbacks,cb));
+        assertFalse(partial.exists());assertFalse(new ReceiptFiles(context,name).file(abandoned.id).exists());assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptImage> cb)->repo.load(a,abandoned.id,callbacks,cb)));assertArrayEquals(jpeg,await((RepositoryCallback<ReceiptImage> cb)->repo.load(b,attached.id,callbacks,cb)).bytes());
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptImage> cb)->repo.load(a,"../escape",callbacks,cb)));
+    }
+    @Test public void receiptVersion4UpgradePreservesAccountingAndRecurringHistory() throws Exception {
+        String migration="receipt-upgrade-"+UUID.randomUUID()+".db",g=UUID.randomUUID().toString(),expense=UUID.randomUUID().toString(),bill=UUID.randomUUID().toString(),cycle=UUID.randomUUID().toString();
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration,4)){SQLiteDatabase db=helper.getWritableDatabase();db.execSQL("INSERT INTO users VALUES (?,?,?,NULL,X'01',X'02','test',1,1,1)",new Object[]{a,"Original","original@example.com"});db.execSQL("INSERT INTO groups(id,name,type,admin_id,created_at,creator_id) VALUES (?,?,?,?,?,?)",new Object[]{g,"Original group","FLAT",a,100,a});db.execSQL("INSERT INTO group_members VALUES (?,?,'ACTIVE',100,NULL)",new Object[]{g,a});
+            db.execSQL("INSERT INTO expenses VALUES (?,?,?,12345,?,?,?,100)",new Object[]{expense,g,"Original expense",a,a,"Other"});db.execSQL("INSERT INTO expense_splits VALUES (?,?,?,12345)",new Object[]{expense,g,a});
+            db.execSQL("INSERT INTO recurring_bills VALUES (?,?,?,99900,31,?,3,1)",new Object[]{bill,g,"WiFi",a});db.execSQL("INSERT INTO recurring_cycles VALUES (?,?,?,2026,2,?,99900,?)",new Object[]{cycle,bill,g,Rules.dueDate(2026,2,28),a});db.execSQL("INSERT INTO recurring_contributions VALUES (?,?,?,99900,1)",new Object[]{cycle,g,a});}
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration)){SQLiteDatabase db=helper.getWritableDatabase();assertEquals(5,db.getVersion());assertEquals(1,count(db,"expenses"));assertEquals(1,count(db,"expense_splits"));assertEquals(1,count(db,"recurring_cycles"));assertEquals(0,count(db,"receipts"));try(Cursor c=db.rawQuery("SELECT amount_paise FROM expenses",null)){assertTrue(c.moveToFirst());assertEquals(12345,c.getLong(0));}try(Cursor c=db.rawQuery("SELECT paid FROM recurring_contributions",null)){assertTrue(c.moveToFirst());assertEquals(1,c.getInt(0));}}
+        context.deleteDatabase(migration);
+    }
     @Test public void recurringBackfillSnapshotsPauseAndReactivationAreTransactional() throws Exception {
         AtomicLong clock=new AtomicLong(Rules.dueDate(2027,1,10));repo.close();repo=new SqliteRepositories(context,name,clock::get);seed();
         String id=UUID.randomUUID().toString();RecurringBill original=new RecurringBill(id,group,"Internet",10001,31,Arrays.asList(b,a),a,3,true);
@@ -348,7 +404,7 @@ public class SqliteRepositoriesTest {
             db.execSQL("INSERT INTO recurring_cycles VALUES (?,?,?,2026,2,?,100,?)",new Object[]{cycle,bill,group,Rules.dueDate(2026,2,28),a});
             db.execSQL("INSERT INTO recurring_contributions VALUES (?,?,?,100,1)",new Object[]{cycle,group,a});
         }
-        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration)) {SQLiteDatabase db=helper.getWritableDatabase();assertEquals(4,db.getVersion());assertEquals(1,count(db,"recurring_cycles"));assertEquals(1,count(db,"recurring_schedule"));assertEquals(0,count(db,"recurring_reminders"));try(Cursor c=db.rawQuery("SELECT paid FROM recurring_contributions",null)){assertTrue(c.moveToFirst());assertEquals(1,c.getInt(0));}}
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration)) {SQLiteDatabase db=helper.getWritableDatabase();assertEquals(5,db.getVersion());assertEquals(1,count(db,"recurring_cycles"));assertEquals(1,count(db,"recurring_schedule"));assertEquals(0,count(db,"recurring_reminders"));try(Cursor c=db.rawQuery("SELECT paid FROM recurring_contributions",null)){assertTrue(c.moveToFirst());assertEquals(1,c.getInt(0));}}
         context.deleteDatabase(migration);
     }
     @Test public void recurringSnapshotsRemainSeparateAndUnique() throws Exception {
@@ -385,7 +441,7 @@ public class SqliteRepositoriesTest {
         }
         try(SplitEaseDatabase upgraded=new SplitEaseDatabase(context,migrationName)) {
             SQLiteDatabase db=upgraded.getWritableDatabase();
-            assertEquals(4,db.getVersion()); assertEquals(1,count(db,"users")); assertEquals(1,count(db,"groups")); assertEquals(0,count(db,"recurring_cycles"));
+            assertEquals(5,db.getVersion()); assertEquals(1,count(db,"users")); assertEquals(1,count(db,"groups")); assertEquals(0,count(db,"recurring_cycles"));
             try(Cursor creator=db.rawQuery("SELECT creator_id FROM groups",null)) { assertTrue(creator.moveToFirst()); assertEquals(a,creator.getString(0)); }
             try(Cursor c=db.rawQuery("PRAGMA foreign_key_check",null)) { assertEquals(0,c.getCount()); }
         }

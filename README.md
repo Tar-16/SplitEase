@@ -1,6 +1,6 @@
 # SplitEase
 
-Java Android expense-sharing app for Indian users. Milestone 7 adds monthly shared-bill tracking, contribution history and local reminders alongside the existing expenses, groups and settlements. Local authentication and profiles are preserved. Recurring now tracks independent monthly contributions. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase and OCR are not included. UPI handoff does not verify payments.
+Java Android expense-sharing app for Indian users. Milestone 8 adds private receipt photos, on-device OCR suggestions and editable attachments to the existing expenses, groups, settlements and recurring tracker. Local authentication and profiles are preserved. Recurring now tracks independent monthly contributions. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase uploads are not included. UPI handoff does not verify payments.
 
 ## Setup and toolchain
 
@@ -12,7 +12,8 @@ Open the directory in Android Studio supporting AGP 9.2 (Panda 4 or newer). Inst
 - The existing daemon JVM configuration selects JDK 25; verification used JDK 25. Java application code remains Java 17.
 - Existing dependencies: AppCompat 1.7.1, Core 1.17.0, Activity 1.12.4, Fragment 1.8.9, Navigation Fragment/UI 2.9.8, Material Components 1.13.0.
 - Added: Bouncy Castle `bcprov-jdk18on:1.83` for portable Argon2id across API 24+, AndroidX Test Runner 1.6.2 and AndroidX Test JUnit 1.2.1. JUnit 4.13.2 remains for local tests.
-- Lifecycle ViewModel/LiveData 2.11.0; WorkManager 2.12.0 for local reminders; application version name 0.7.0.
+- Lifecycle ViewModel/LiveData 2.11.0; WorkManager 2.12.0 for local reminders; application version name 0.8.0.
+- Bundled ML Kit text-recognition 16.0.1 and ExifInterface 1.4.2 for receipt processing. No Firebase Auth/Firestore/Storage SDK was added.
 - XML Android Views and ViewBinding; no Kotlin application sources or Compose. Dependencies may internally use Kotlin.
 
 ```sh
@@ -37,6 +38,7 @@ app/src/main/java/com/example/splitease/
   repository/                 Five feature interfaces, callbacks, observable queries
   data/                       SplitEaseDatabase, SqliteRepositories, PasswordHasher
   reminders/                  WorkManager checks and session-scoped notifications
+  platform/receipts/           Private capture, EXIF/compression and bundled OCR
   util/                       Exact INR display formatting
 app/src/test/                 Android-independent monetary and scheduling tests
 app/src/androidTest/          Real SQLite and navigation/recreation tests
@@ -63,7 +65,7 @@ Feature interfaces expose no Android, SQLite or Firebase types, allowing future 
 
 ## Expenses and balances (Milestone 5)
 
-Group Detail now has Members, Expenses and Balances tabs. Expenses are grouped by their UTC calendar date (newest first), with category glyph/label, payer, total, participant count, your share and your signed net impact. The floating add action opens the editor; viewing an expense offers edit and confirmed deletion. Any current group member can edit/delete.
+Group Detail now has Members, Expenses and Balances tabs. Expenses are grouped by their UTC calendar date (newest first), with category glyph/label, payer, total, participant count, your share and your signed net impact. A full-width teal “+ Add Expense” action sits below the tabs only in Expenses and remains above the scrolling list; it opens the existing editor for that group. The group summary can collapse while tabs/action stay pinned. Viewing an expense offers edit and confirmed deletion. Any current group member can edit/delete.
 
 The editor accepts a title, positive INR amount (plain digits with up to two decimal places), payer, one or more checkbox participants, Food/Travel/Rent/Bills/Other category, and a calendar date. Exact shares preview immediately using the existing sorted-UUID remainder rule. No implicit rounding, percentage or custom splits. New payers/participants must be current members; an old expense can retain its original departed payer/participants, visibly labeled former members. Existing legacy category text can be retained on edit, but new entries use the five categories.
 
@@ -71,11 +73,11 @@ The editor accepts a title, positive INR amount (plain digits with up to two dec
 
 `GroupDetails` includes immutable expense, balance and public-name snapshots in the same worker read. It retains current members and historical identities referenced by expenses or recorded settlements. Balances derive from the existing `Balances` domain logic; positive is owed to the member, negative is owed by the member, zero is settled. These aggregate nets do not imply specific debtor/creditor payment pairs. They are never persisted and recurring contributions never enter them. Home and Detail refresh after mutations and account switches. The summary total means all expense amounts, not outstanding debt; latest expense date is an actual expense date, not an invented modification timestamp.
 
-Milestone 5 required no schema or dependency changes. Milestones 6–7 extend that release with settlements/UPI handoff and recurring tracking, described below. OCR and Firebase remain outside scope.
+Milestone 5 required no schema or dependency changes. Milestones 6–7 extend that release with settlements/UPI handoff and recurring tracking, described below. Milestone 8 adds local receipt OCR below; Firebase remains outside scope.
 
 ## Schema and migrations
 
-Database: app-private `splitease.db`, version **4**. Foreign keys are enabled on every connection. All standalone entity identifiers are canonical String UUIDs validated at repository boundaries. Association rows use composite keys of the referenced UUIDs rather than redundant identifiers. Financial columns require SQLite integer storage; Java uses `long` paise.
+Database: app-private `splitease.db`, version **5**. Foreign keys are enabled on every connection. All standalone entity identifiers are canonical String UUIDs validated at repository boundaries. Association rows use composite keys of the referenced UUIDs rather than redundant identifiers. Financial columns require SQLite integer storage; Java uses `long` paise.
 
 | Table | Purpose and constraints |
 | --- | --- |
@@ -91,10 +93,11 @@ Database: app-private `splitease.db`, version **4**. Foreign keys are enabled on
 | `recurring_contributions` | Historical participant shares and paid flag, keyed by `(cycle_id,user_id)` |
 | `recurring_schedule` | One persisted next-month cursor per bill |
 | `recurring_reminders` | Durable unique cycle/recipient notification receipt |
+| `receipts` | Logical UUID, group/optional expense link, draft owner, dimensions/size/time; no image BLOB |
 
 Group/date indexes support expense and settlement lists; membership, active-bill and contribution indexes support scoped queries. Composite foreign keys prevent splits/contributions from referencing a different group's members.
 
-Migration chain: v1 creates core accounting tables; v2 adds recurring tables; v3 adds immutable creator attribution; v4 adds recurring cursors and reminder receipts. New databases apply the same chain. Upgrades are additive and transactional under SQLiteOpenHelper; unsupported upgrades/downgrades throw instead of deleting data. Because v1/v2 did not record original creator identity, the v3 migration backfills their current admin as the best available attribution. New groups retain their actual creator through admin transfers. Milestone 1 shipped no database schema.
+Migration chain: v1 creates core accounting tables; v2 adds recurring tables; v3 adds immutable creator attribution; v4 adds recurring cursors and reminder receipts; v5 adds receipt metadata. New databases apply the same chain. Upgrades are additive and transactional under SQLiteOpenHelper; unsupported upgrades/downgrades throw instead of deleting data. Because v1/v2 did not record original creator identity, the v3 migration backfills their current admin as the best available attribution. New groups retain their actual creator through admin transfers. Milestone 1 shipped no database schema.
 
 Deletion semantics are explicit: referenced users cannot be deleted. Leaving changes membership status and preserves financial references. Bills with historical cycles cannot be deleted; deactivate them instead. Group deletion also fails if recurring history would be orphaned. Groups without recurring history can be deleted with their owned records in a transaction. No user-facing deletion workflow is introduced.
 
@@ -130,7 +133,7 @@ These parameters follow the [OWASP password-storage guidance](https://cheatsheet
 
 Signup validates username presence, normalized email format and matching passwords. A live checklist displays all five requirements: minimum eight characters, uppercase, lowercase, number and non-whitespace special character. Password fields have visibility toggles; validation failures are visible; submissions show loading and cannot be duplicated. Login checks the real Argon2id credential through UserRepository with a generic incorrect-email-or-password error. No reset link, hardcoded credential, attempt counter or lockout exists.
 
-The existing authentication schema remains unchanged; overall database version is now **4** with the additive M7 recurring migration. UserRepository gained normalized `findUserByEmail`; duplicate-account failures use a storage-independent typed error. SQLite UNIQUE constraints remain authoritative. Registration validation is in the auth boundary; existing Milestone 2 accounts can still log in even if their older password would not meet the new signup policy. Username/email normalization remains trim + Locale.ROOT lowercase for both create and lookup.
+The existing authentication schema remains unchanged; overall database version is now **5** with additive recurring and receipt migrations. UserRepository gained normalized `findUserByEmail`; duplicate-account failures use a storage-independent typed error. SQLite UNIQUE constraints remain authoritative. Registration validation is in the auth boundary; existing Milestone 2 accounts can still log in even if their older password would not meet the new signup policy. Username/email normalization remains trim + Locale.ROOT lowercase for both create and lookup.
 
 `AuthService` is the replaceable authentication/session interface. `LocalAuthService` uses the existing asynchronous UserRepository, coordinates on its own serial worker, maps internal errors to safe codes and publishes session snapshots through the existing ObservableQuery pattern. `AuthViewModel` observes on the main thread and exposes lifecycle-aware LiveData. Fragments bind views and forward actions; they do not query SQL, hash passwords or access preferences. AuthService derives the profile owner from its own authenticated snapshot. Logout invalidates in-flight authentication callbacks so a late registration/login cannot restore a logged-out session.
 
@@ -144,7 +147,7 @@ Local accounts/data are device-specific. Firebase will start fresh; no local-acc
 
 ## Verification
 
-Milestone 7: **23/23 local tests**, **35/35 API 37 emulator tests**, build/install passed; final lint **0 errors, 12 pre-existing warnings**. Force-stop/relaunch retained the session, bill and Paid status; light/dark, landscape and 1.3 font-scale checks passed. Details are recorded in [the current report](docs/milestone-7-verification.md). Earlier milestone reports remain historical evidence. Use the build/test commands above; emulator coverage is Android 17 / API 37, with API 24/physical-device coverage still pending.
+Milestone 8: **28/28 local tests**, **46 API 37 emulator tests passed, 2 opt-in tests skipped**, build passed; lint **0 errors, 12 pre-existing warnings** and no new receipt warnings. The receipt force-stop/relaunch test passed separately, checking restored identity, metadata and image SHA-256. Real camera permission denial/capture, light/dark, landscape and 1.3× text were checked on the emulator. Evidence and limitations are in [Milestone 8 verification](docs/milestone-8-verification.md). Earlier reports remain historical evidence. API 24 and physical-device coverage remain pending.
 
 ## Settlements and UPI (Milestone 6)
 
@@ -154,7 +157,7 @@ The pure-Java calculator greedily matches largest remaining debts and credits, b
 
 Recipient UPI metadata is exposed only through the membership-authorized settlement snapshot for suggested recipients. UPI IDs are unverified. The chooser receives an encoded INR intent for the selected suggestion’s full amount; changing the manual record amount does not change that intent. Returning or cancelling never records or confirms payment. Missing UPI apps/IDs leave “Already paid? Record it” available. No bank integration, transaction verification or automatic reconciliation exists.
 
-Milestone 6 added no dependencies or migration. Milestone 7 adds WorkManager 2.12.0 and schema version 4. Milestone 6 verification is documented in [Milestone 6 verification](docs/milestone-6-verification.md). Earlier reports are historical evidence.
+Milestone 6 added no dependencies or migration. Milestone 7 added WorkManager 2.12.0 and schema 4; Milestone 8 adds receipt processing and schema 5. Milestone 6 verification is documented in [Milestone 6 verification](docs/milestone-6-verification.md). Earlier reports are historical evidence.
 
 ## Recurring shared bills (Milestone 7)
 
@@ -170,6 +173,24 @@ WorkManager 2.12.0 runs an immediate check on session/resume/settings updates pl
 
 Local phase: only the currently signed-in unpaid participant receives a reminder during the lead window through the due day. Other local accounts receive eligible reminders when signed in, so this device cannot notify all accounts simultaneously or reach other devices. Account changes clear notifications and cancel prior work; paid/deactivated/inaccessible bills are pruned. Lock-screen public content is generic. Durable receipts avoid repeat reminders after restart, account switching or paid/unpaid toggles. Receipts are claimed before posting: a crash or permission race can miss a reminder rather than deliver a duplicate. Android notifications are advisory; the app remains the source for contribution status.
 
+## Receipts (Milestone 8)
+
+Add/Edit Expense includes Scan Receipt. Grant camera permission, capture with the installed camera app, then review the private preview, retake, view/zoom, or remove it. A suggested total is shown only when GRAND TOTAL, NET AMOUNT, TOTAL PAYABLE or TOTAL can be resolved conservatively. Cash/tendered/change, subtotal, tax totals and conflicting totals are excluded. The detected result uses a small label, prominent teal amount and secondary caution text in a rounded card. The check beside the amount explicitly applies it to the expense field and shows “Amount applied”; manual edits clear that confirmation. Manual correction always remains available. Scanning never creates an expense. Save applies financial and attachment changes together.
+
+The bundled Latin ML Kit model runs on-device, including overlapping vertical sections for long receipts; recognized text is transient and never logged or persisted. OCR is a suggestion, not a guarantee: blur, handwriting, unusual layouts, unsupported scripts and ambiguous totals require manual entry. No gallery/import feature is inferred. Camera permission denial, cancellation and missing camera apps leave manual entry available.
+
+Photos are normalized for all EXIF orientations, resized without changing aspect ratio and re-encoded as JPEG (quality 88, falling back to 82/76 if needed; maximum 4 MiB). Storage normalization targets at most 12 megapixels, 1,600 px short side and 16,000 px long side, retaining smaller images at original resolution. Extremely long images that would reduce an originally readable short side below 640 px are rejected for retake. The zoom/pan viewer preserves the full stored raster; EXIF/GPS metadata and original full-resolution captures are not retained after successful processing.
+
+ReceiptStorageRepository exchanges logical UUID metadata and encoded byte payloads, never filesystem paths. The local adapter uses app-private no-backup files. Drafts are creator-private and require current membership; published historical receipts remain accessible to current group members. Every read/write checks permissions. ExpenseRepository’s ReceiptChange overload atomically saves expenses/splits and attachment links; an ordinary save keeps the current receipt. Replacement failure preserves the old attachment and retryable new draft. Removal/deletion commits metadata first and then cleans obsolete files. Startup/explicit cleanup removes unreferenced objects and drafts older than 24 hours; capture cache has the same expiry. Failed orphan deletion is safely retried on later writes/startup. Missing/corrupt files show a recoverable error rather than a broken image.
+
+### Future Firebase Storage adapter contract
+
+Replace the local storage adapter and expense unit of work while keeping logical IDs, metadata, byte payloads and callbacks. A future adapter must stage an immutable object before a Firestore transaction publishes its expense link; a failed transaction retains a retryable draft or compensates by deleting the unpublished object. Never delete the previous object before the new metadata commit. Removed/replaced/deleted objects need idempotent deferred cleanup and an expiry job for abandoned uploads; a database and object store do not share one transaction. Define metadata states/version checks to handle interrupted uploads and concurrent edits.
+
+Both Firestore metadata rules and Cloud Storage object access must verify current group membership from authoritative membership records, with unpublished objects limited to their creator and no public download URLs. Rules must enforce group/expense identity, allowed image type/size and immutable logical references. Client checks are insufficient. Fresh Firebase accounts, groups and storage objects will be created later; local UUIDs, credentials, metadata and images are **not migrated**. No Firebase SDK, upload, rules deployment or cloud data migration is included now.
+
+Current evidence: [Milestone 8 verification](docs/milestone-8-verification.md). Earlier milestone verification remains historical evidence.
+
 ## Remaining scope
 
-API 24/physical-device coverage and exhaustive accessibility/device testing remain future checks. Receipt OCR and Firebase are not implemented. Firebase Auth/Firestore will use fresh accounts/data. No work beyond Milestone 7 is included. See AGENTS.md for architecture rules.
+API 24/physical-device coverage and exhaustive accessibility/device testing remain future checks. Receipt OCR is implemented locally; Firebase is not implemented. Firebase Auth/Firestore will use fresh accounts/data. No work beyond Milestone 8 is included. See AGENTS.md for architecture rules.

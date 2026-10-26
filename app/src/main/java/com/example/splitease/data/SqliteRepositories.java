@@ -23,8 +23,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Actor IDs are supplied by the trusted AuthService presentation layer, not an authentication boundary.
  */
 public final class SqliteRepositories implements UserRepository, GroupRepository,
-        ExpenseRepository, SettlementRepository, RecurringBillRepository, AutoCloseable {
+        ExpenseRepository, SettlementRepository, RecurringBillRepository, ReceiptStorageRepository, AutoCloseable {
     private final SplitEaseDatabase helper;
+    private final ReceiptFiles receiptFiles;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> new Thread(r, "splitease-db"));
     private final List<Watch<?>> watches = new CopyOnWriteArrayList<>();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -32,14 +33,14 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
     private final java.util.function.LongSupplier clock;
     public SqliteRepositories(Context context) { this(context,"splitease.db"); }
     public SqliteRepositories(Context context, String databaseName) { this(context,databaseName,System::currentTimeMillis); }
-    SqliteRepositories(Context context,String databaseName,java.util.function.LongSupplier clock) { helper=new SplitEaseDatabase(context,databaseName);this.clock=clock; }
+    SqliteRepositories(Context context,String databaseName,java.util.function.LongSupplier clock) { helper=new SplitEaseDatabase(context,databaseName);receiptFiles=new ReceiptFiles(context,databaseName);this.clock=clock; }
     private interface Work<T> { T run() throws Exception; }
     private interface Mapper<T> { T read(Cursor cursor); }
     private SQLiteDatabase db() { return helper.getWritableDatabase(); }
 
     /** Explicit async initialization; opening the owner itself never touches disk. */
     public void initialize(Executor executor, RepositoryCallback<Boolean> callback) {
-        submit(false, () -> { db(); return true; }, executor, callback);
+        submit(false, () -> { db(); try{sweepReceipts();}catch(java.io.IOException ignored){/* Deferred cleanup must not block accounting. */} return true; }, executor, callback);
     }
     private <T> void submit(boolean write, Work<T> work, Executor executor, RepositoryCallback<T> callback) {
         Objects.requireNonNull(executor); Objects.requireNonNull(callback);
@@ -58,6 +59,7 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
                     executor.execute(() -> callback.onError(error));
                     return;
                 }
+                if(write) { try { reconcileReceiptFiles(); } catch(java.io.IOException ignored) { /* Safe orphan retained; retry on next write/startup. */ } }
                 if (write) for (Watch<?> watch : watches) watch.refresh();
                 T value = result;
                 executor.execute(() -> callback.onSuccess(value));
@@ -319,6 +321,10 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
     private List<Expense> expenses(String groupId) { return query("SELECT * FROM expenses WHERE group_id=? ORDER BY expense_date,id",this::expense,Rules.id(groupId)); }
     @Override public ObservableQuery<List<Expense>> observeExpenses(String groupId) { return observe(() -> expenses(groupId)); }
     @Override public void saveExpense(String actorId, Expense value, Executor executor, RepositoryCallback<Expense> callback) {
+        saveExpense(actorId,value,ReceiptChange.keep(),executor,callback);
+    }
+    @Override public void saveExpense(String actorId, Expense value, ReceiptChange change, Executor executor, RepositoryCallback<Expense> callback) {
+        Objects.requireNonNull(change);
         submit(true, () -> {
             Rules.id(value.id); member(value.groupId,actorId); Rules.positive(value.amountPaise); Rules.date(value.expenseDate);
             boolean editing = exists("expenses",value.id);
@@ -344,12 +350,55 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
             for (ExpenseSplit split : value.splits) insert("expense_splits",values("expense_id",value.id,"group_id",value.groupId,"user_id",split.userId,"share_paise",split.sharePaise));
             balance(value.groupId); // Fail atomically on long overflow rather than persist unusable balances.
             ExpenseAmounts.total(expenses(value.groupId)); // Group totals must also remain representable.
+            if(change.kind!=ReceiptChange.Kind.KEEP) {
+                ReceiptMetadata replacement=null;
+                if(change.kind==ReceiptChange.Kind.REPLACE) {
+                    replacement=receipt(change.draftId);authorizeReceipt(actorId,replacement);
+                    String owner=one("SELECT owner_id FROM receipts WHERE id=?",c->c.getString(0),replacement.id);
+                    if(!owner.equals(actorId)||replacement.expenseId!=null||!replacement.groupId.equals(value.groupId))throw new SecurityException("Draft not available");
+                    receiptFiles.read(replacement.id); // Missing/inaccessible files cannot become visible attachments.
+                }
+                db().delete("receipts","expense_id=?",new String[]{value.id});
+                if(replacement!=null)update("receipts",replacement.id,values("expense_id",value.id));
+            }
             return expense(value.id);
         },executor,callback);
     }
     @Override public void deleteExpense(String actorId, String expenseId, Executor executor, RepositoryCallback<Boolean> callback) {
         submit(true, () -> { Expense value=expense(expenseId); member(value.groupId,actorId); db().delete("expenses","id=?",new String[]{expenseId}); balance(value.groupId); return true; },executor,callback);
     }
+    private ReceiptMetadata receipt(Cursor c) {return new ReceiptMetadata(str(c,"id"),str(c,"group_id"),str(c,"expense_id"),(int)num(c,"width"),(int)num(c,"height"),num(c,"byte_count"),num(c,"created_at"));}
+    private ReceiptMetadata receipt(String id) {return one("SELECT * FROM receipts WHERE id=?",this::receipt,Rules.id(id));}
+    private void authorizeReceipt(String actor,ReceiptMetadata metadata) {
+        member(metadata.groupId,actor);
+        if(metadata.expenseId==null&&!one("SELECT owner_id FROM receipts WHERE id=?",c->c.getString(0),metadata.id).equals(actor))throw new SecurityException("Private receipt draft");
+    }
+    @Override public void stage(String actor,String groupId,byte[] normalized,Executor executor,RepositoryCallback<ReceiptMetadata> callback) {
+        byte[] owned=normalized==null?null:normalized.clone();
+        submit(true,()->{
+            member(groupId,actor);int[] dimensions=receiptFiles.dimensions(owned);String id=UUID.randomUUID().toString();
+            receiptFiles.write(id,owned); // Complete file first. A rolled-back metadata write leaves only a cleanable orphan.
+            insert("receipts",values("id",id,"group_id",groupId,"expense_id",null,"owner_id",actor,"width",dimensions[0],"height",dimensions[1],"byte_count",owned.length,"created_at",clock.getAsLong()));
+            return receipt(id);
+        },executor,callback);
+    }
+    @Override public void load(String actor,String id,Executor executor,RepositoryCallback<ReceiptImage> callback) {
+        submit(false,()->{ReceiptMetadata metadata=receipt(id);authorizeReceipt(actor,metadata);byte[] bytes=receiptFiles.read(id);if(bytes.length!=metadata.byteCount)throw new java.io.IOException("Receipt unavailable");return new ReceiptImage(metadata,bytes);},executor,callback);
+    }
+    @Override public void findForExpense(String actor,String expenseId,Executor executor,RepositoryCallback<Optional<ReceiptMetadata>> callback) {
+        submit(false,()->{Expense value=expense(expenseId);member(value.groupId,actor);List<ReceiptMetadata> list=query("SELECT * FROM receipts WHERE expense_id=?",this::receipt,expenseId);return list.isEmpty()?Optional.empty():Optional.of(list.get(0));},executor,callback);
+    }
+    @Override public void discardDraft(String actor,String id,Executor executor,RepositoryCallback<Boolean> callback) {
+        submit(true,()->{ReceiptMetadata value=receipt(id);authorizeReceipt(actor,value);if(value.expenseId!=null)throw new IllegalStateException("Use an expense receipt mutation");return db().delete("receipts","id=?",new String[]{id})==1;},executor,callback);
+    }
+    private void reconcileReceiptFiles()throws java.io.IOException {
+        Set<String> live=new HashSet<>(query("SELECT id FROM receipts",c->c.getString(0)));receiptFiles.reconcile(live);
+    }
+    private void sweepReceipts()throws java.io.IOException {
+        db().delete("receipts","expense_id IS NULL AND created_at<?",new String[]{String.valueOf(Math.max(0,clock.getAsLong()-86400000L))});
+        reconcileReceiptFiles();
+    }
+    @Override public void cleanUp(Executor executor,RepositoryCallback<Boolean> callback) {submit(false,()->{sweepReceipts();return true;},executor,callback);}
     private Settlement settlement(Cursor c) { return new Settlement(str(c,"id"),str(c,"group_id"),str(c,"payer_id"),str(c,"payee_id"),num(c,"amount_paise"),num(c,"settlement_date")); }
     private Settlement settlement(String id) { return one("SELECT * FROM settlements WHERE id=?",this::settlement,Rules.id(id)); }
     private List<Settlement> settlements(String groupId) { return query("SELECT * FROM settlements WHERE group_id=? ORDER BY settlement_date,id",this::settlement,Rules.id(groupId)); }

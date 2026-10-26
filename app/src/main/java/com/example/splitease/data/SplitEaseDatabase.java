@@ -6,7 +6,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 
 /** Additive migrations: v1 accounting, v2 recurring bills, v3 original creator attribution, v4 recurring cursors/receipts. */
 public final class SplitEaseDatabase extends SQLiteOpenHelper {
-    public static final int VERSION = 4;
+    public static final int VERSION = 5;
     public SplitEaseDatabase(Context context) { this(context, "splitease.db", VERSION); }
     public SplitEaseDatabase(Context context, String name) { this(context, name, VERSION); }
     // Package-visible version selection permits a real v1 -> v2 migration test.
@@ -20,6 +20,7 @@ public final class SplitEaseDatabase extends SQLiteOpenHelper {
         if (targetVersion >= 2) createRecurring(db);
         if (targetVersion >= 3) addCreator(db);
         if (targetVersion >= 4) addRecurringSchedule(db);
+        if (targetVersion >= 5) addReceipts(db);
     }
     private final int targetVersion;
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
@@ -28,9 +29,14 @@ public final class SplitEaseDatabase extends SQLiteOpenHelper {
         if (oldVersion < 2 && newVersion >= 2) createRecurring(db);
         if (oldVersion < 3 && newVersion >= 3) addCreator(db);
         if (oldVersion < 4 && newVersion >= 4) addRecurringSchedule(db);
+        if (oldVersion < 5 && newVersion >= 5) addReceipts(db);
     }
     @Override public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         throw new IllegalStateException("Database downgrade would risk data loss");
+    }
+    private static void addReceipts(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE receipts (id TEXT PRIMARY KEY NOT NULL,group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,expense_id TEXT UNIQUE,owner_id TEXT NOT NULL REFERENCES users(id),width INTEGER NOT NULL CHECK(width>0),height INTEGER NOT NULL CHECK(height>0),byte_count INTEGER NOT NULL CHECK(byte_count>0),created_at INTEGER NOT NULL CHECK(created_at>=0),FOREIGN KEY(expense_id,group_id) REFERENCES expenses(id,group_id) ON DELETE CASCADE)");
+        db.execSQL("CREATE INDEX receipts_drafts ON receipts(expense_id,created_at)");
     }
     private static void addRecurringSchedule(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE recurring_schedule (bill_id TEXT PRIMARY KEY NOT NULL REFERENCES recurring_bills(id) ON DELETE CASCADE, next_month INTEGER NOT NULL)");

@@ -37,11 +37,15 @@ public final class GroupDetailFragment extends GroupScreenFragment {
             NavHostFragment.findNavController(this).navigate(R.id.settlements_screen,args);
         });
         binding.addExpense.setOnClickListener(v -> openExpense(null));
+        if(getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE) binding.groupAppBar.setExpanded(false,false);
         binding.leave.setOnClickListener(v -> confirm(getString(R.string.group_leave_confirm),model::leave));
         model.state().observe(getViewLifecycleOwner(),state -> {
             status(state,binding.progress,binding.error);
             binding.refresh.setVisibility(state.error==0?View.GONE:View.VISIBLE);
             binding.content.setVisibility(state.detail==null ? View.GONE : View.VISIBLE);
+            binding.summary.setVisibility(state.detail==null?View.GONE:View.VISIBLE);
+            binding.tabs.setVisibility(state.detail==null?View.GONE:View.VISIBLE);
+            if(state.error!=0) binding.groupAppBar.setExpanded(true);
             binding.members.removeAllViews();
             if(state.detail!=null) {
                 GroupDetails detail=state.detail; boolean admin=detail.group.adminId.equals(state.actorId);

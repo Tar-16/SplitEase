@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="receipt_title">Receipt</string>
+  <string name="receipt_scan">Scan Receipt</string>
+  <string name="receipt_retake">Retake / replace receipt</string>
+  <string name="receipt_view">View receipt</string>
+  <string name="receipt_remove">Remove receipt</string>
+  <string name="receipt_remove_confirm">Remove this receipt when you save the expense? The existing image remains attached until Save succeeds.</string>
+  <string name="receipt_hint">Optional: scan a receipt, review its image and choose whether to use the detected total. Scanning never saves an expense.</string>
+  <string name="receipt_review">Review the receipt and expense amount. Attachment changes take effect only when you save the expense.</string>
+  <string name="receipt_detected_label">Detected amount</string>
+  <string name="receipt_detected">Please check the receipt before using this amount.</string>
+  <string name="receipt_confirm_amount">Confirm detected amount</string>
+  <string name="receipt_amount_applied">Amount applied</string>
+  <string name="receipt_no_total">No unambiguous payable total was found. Enter or correct the expense amount manually; the receipt can still be attached.</string>
+  <string name="receipt_ocr_failed">Text recognition was unavailable. Enter the amount manually; the receipt image is still ready to attach.</string>
+  <string name="receipt_scan_failed">Could not process or store this capture. Your previous attachment is preserved. Retake a clear, shorter image or enter the amount manually.</string>
+  <string name="receipt_camera_denied">Camera permission was denied. Allow it in Android settings to scan, or continue with manual expense entry.</string>
+  <string name="receipt_camera_unavailable">No camera could complete the capture. You can still enter the expense manually.</string>
+  <string name="receipt_cancelled">Capture cancelled. The previous receipt and amount are unchanged.</string>
+  <string name="receipt_removed">Receipt marked for removal. Save the expense to apply this change.</string>
+  <string name="receipt_unavailable">Receipt unavailable. Retry, replace it or remove it while editing the expense.</string>
+  <string name="receipt_retry">Retry receipt</string>
+  <string name="receipt_cancel_capture">Cancel pending capture</string>
+  <string name="receipt_image_description">Receipt preview</string>
+  <string name="receipt_viewer_hint">Pinch to zoom; drag to read the full receipt. Zoom buttons are also available.</string>
+  <string name="receipt_zoom_in">Zoom in</string>
+  <string name="receipt_zoom_out">Zoom out</string>
+  <string name="receipt_camera_settings">Camera settings</string>
+</resources>

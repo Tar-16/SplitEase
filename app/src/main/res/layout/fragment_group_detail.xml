@@ -1,39 +1,43 @@
-<?xml version="1.0" ?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent">
-    <androidx.core.widget.NestedScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp" android:paddingBottom="96dp">
-            <com.google.android.material.button.MaterialButton android:id="@+id/back" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_back"/>
-            <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/tab_groups" android:textAppearance="@style/TextAppearance.SplitEase.Title"/>
-            <TextView android:id="@+id/meta" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_members" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
-            <ProgressBar android:id="@+id/progress" android:layout_width="32dp" android:layout_height="32dp" android:layout_gravity="center_horizontal" android:layout_marginTop="16dp"/>
-            <TextView android:id="@+id/error" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="?attr/colorError" android:accessibilityLiveRegion="polite" android:visibility="gone"/>
-            <com.google.android.material.button.MaterialButton android:id="@+id/refresh" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_refresh"/>
-            <LinearLayout android:id="@+id/content" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                <TextView android:id="@+id/total" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_total" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
-                <TextView android:id="@+id/your_balance" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_your_balance" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle"/>
-                <com.google.android.material.tabs.TabLayout android:id="@+id/tabs" android:layout_width="match_parent" android:layout_height="wrap_content" app:tabMode="scrollable">
-                    <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/group_members"/>
-                    <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/expenses_tab"/>
-                    <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/balances_tab"/>
-                </com.google.android.material.tabs.TabLayout>
-                <LinearLayout android:id="@+id/members_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                    <TextView android:id="@+id/members_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_members" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle"/>
-                    <LinearLayout android:id="@+id/members" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
-                    <include android:id="@+id/member_search" layout="@layout/view_member_search"/>
-                    <TextView android:id="@+id/leave_reason" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_leave_balance" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/leave" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_leave"/>
-                </LinearLayout>
-                <LinearLayout android:id="@+id/expenses_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                    <TextView android:id="@+id/expenses_empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expenses_empty" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
-                    <LinearLayout android:id="@+id/expense_list" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
-                </LinearLayout>
-                <LinearLayout android:id="@+id/balances_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                    <com.google.android.material.button.MaterialButton android:id="@+id/settle_up" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settle_up" android:layout_marginTop="12dp" />
-                    <TextView android:id="@+id/balance_explanation" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/balance_explanation" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
-                    <LinearLayout android:id="@+id/balance_list" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
-                </LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent">
+    <com.google.android.material.appbar.AppBarLayout android:id="@+id/group_app_bar" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@color/background" app:elevation="0dp">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp" android:paddingBottom="12dp" app:layout_scrollFlags="scroll">
+            <com.google.android.material.button.MaterialButton android:id="@+id/back" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_back" />
+            <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/tab_groups" android:textAppearance="@style/TextAppearance.SplitEase.Title" />
+            <TextView android:id="@+id/meta" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_members" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+            <ProgressBar android:id="@+id/progress" android:layout_width="32dp" android:layout_height="32dp" android:layout_gravity="center_horizontal" android:layout_marginTop="16dp" />
+            <TextView android:id="@+id/error" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="?attr/colorError" android:accessibilityLiveRegion="polite" android:visibility="gone" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/refresh" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_refresh" />
+            <LinearLayout android:id="@+id/summary" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView android:id="@+id/total" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_total" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+                <TextView android:id="@+id/your_balance" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_your_balance" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle" />
+            </LinearLayout>
+        </LinearLayout>
+        <com.google.android.material.tabs.TabLayout android:id="@+id/tabs" android:layout_width="match_parent" android:layout_height="wrap_content" app:tabMode="scrollable" android:layout_marginStart="24dp" android:layout_marginEnd="24dp">
+            <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/group_members" />
+            <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/expenses_tab" />
+            <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/balances_tab" />
+        </com.google.android.material.tabs.TabLayout>
+        <com.google.android.material.button.MaterialButton android:id="@+id/add_expense" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp" android:layout_marginStart="24dp" android:layout_marginEnd="24dp" android:layout_marginTop="8dp" android:layout_marginBottom="8dp" android:text="@string/expense_add_action" android:textColor="@color/on_primary" android:visibility="gone" app:backgroundTint="@color/primary" app:cornerRadius="16dp" app:icon="@drawable/ic_add" app:iconTint="@color/on_primary" app:iconGravity="textStart" />
+    </com.google.android.material.appbar.AppBarLayout>
+    <androidx.core.widget.NestedScrollView android:id="@+id/detail_scroll" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true" app:layout_behavior="@string/appbar_scrolling_view_behavior">
+        <LinearLayout android:id="@+id/content" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingStart="24dp" android:paddingEnd="24dp" android:paddingBottom="24dp">
+            <LinearLayout android:id="@+id/members_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView android:id="@+id/members_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_members" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle" />
+                <LinearLayout android:id="@+id/members" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+                <include android:id="@+id/member_search" layout="@layout/view_member_search" />
+                <TextView android:id="@+id/leave_reason" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_leave_balance" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/leave" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_leave" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/expenses_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <TextView android:id="@+id/expenses_empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expenses_empty" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+                <LinearLayout android:id="@+id/expense_list" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+            </LinearLayout>
+            <LinearLayout android:id="@+id/balances_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+                <com.google.android.material.button.MaterialButton android:id="@+id/settle_up" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/settle_up" android:layout_marginTop="12dp" />
+                <TextView android:id="@+id/balance_explanation" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/balance_explanation" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
+                <LinearLayout android:id="@+id/balance_list" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
             </LinearLayout>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
-    <com.google.android.material.floatingactionbutton.FloatingActionButton android:id="@+id/add_expense" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="bottom|end" android:layout_margin="24dp" android:contentDescription="@string/expense_add" app:srcCompat="@drawable/ic_add" android:visibility="gone"/>
-</FrameLayout>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -92,6 +92,43 @@ public class ExpenseNavigationTest {
             bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,output);
         } finally { bitmap.recycle(); }
     }
+    @Test public void addExpenseActionRemainsVisibleAndScopedToExpensesTab() throws Exception {
+        try(ActivityScenario<MainActivity> s=ActivityScenario.launch(MainActivity.class)) {
+            openGroup(s);
+            s.onActivity(activity -> assertFalse(activity.findViewById(R.id.add_expense).isShown()));
+            tab(s,1);
+            s.onActivity(activity -> { assertEquals(View.VISIBLE,activity.findViewById(R.id.expenses_empty).getVisibility()); assertAddAction(activity); });
+            screenshot("add-action-empty-light");
+            s.onActivity(activity -> activity.findViewById(R.id.add_expense).performClick()); destination(s,R.id.expense_screen);
+            s.onActivity(activity -> { NavHostFragment host=(NavHostFragment)activity.getSupportFragmentManager().findFragmentById(R.id.nav_host);assertEquals(groupId,host.getChildFragmentManager().getPrimaryNavigationFragment().requireArguments().getString("groupId"));activity.findViewById(R.id.back).performClick(); });
+            destination(s,R.id.group_detail);
+            for(int i=0;i<15;i++) {
+                String id=UUID.randomUUID().toString();Expense expense=new Expense(id,groupId,"Test expense "+i,100,a.id,a.id,"Other",System.currentTimeMillis(),Collections.singletonList(new ExpenseSplit(id,a.id,100)));
+                await((RepositoryCallback<Expense> c) -> app.expenses().saveExpense(a.id,expense,Runnable::run,c));
+            }
+            tab(s,1);waitFor(s,activity -> ((ViewGroup)activity.findViewById(R.id.expense_list)).getChildCount()>=15);
+            waitFor(s,activity -> { androidx.core.widget.NestedScrollView scroll=activity.findViewById(R.id.detail_scroll);return scroll.getChildAt(0).getHeight()>scroll.getHeight()*2; });
+            s.onActivity(activity -> { androidx.core.widget.NestedScrollView scroll=activity.findViewById(R.id.detail_scroll);scroll.scrollTo(0,scroll.getChildAt(0).getHeight()); });
+            waitFor(s,activity -> activity.findViewById(R.id.detail_scroll).getScrollY()>0);
+            s.onActivity(this::assertAddAction); screenshot("add-action-long-list-light");
+            tab(s,0);s.onActivity(activity -> assertFalse(activity.findViewById(R.id.add_expense).isShown()));
+            tab(s,2);s.onActivity(activity -> assertFalse(activity.findViewById(R.id.add_expense).isShown()));
+            tab(s,1);s.recreate();destination(s,R.id.group_detail);waitFor(s,activity -> activity.findViewById(R.id.add_expense).isShown());
+            s.onActivity(activity -> activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
+            waitFor(s,activity -> activity.getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE&&activity.findViewById(R.id.add_expense)!=null&&activity.findViewById(R.id.add_expense).isShown());
+            s.onActivity(this::assertAddAction);screenshot("add-action-landscape-light");
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES));
+            waitFor(s,activity -> (activity.getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES&&activity.findViewById(R.id.add_expense)!=null&&activity.findViewById(R.id.add_expense).isShown());
+            s.onActivity(this::assertAddAction);screenshot("add-action-landscape-dark");
+            s.onActivity(activity -> activity.findViewById(R.id.add_expense).performClick());destination(s,R.id.expense_screen);
+            s.onActivity(activity -> activity.findViewById(R.id.back).performClick());destination(s,R.id.group_detail);
+        }
+    }
+    private void assertAddAction(MainActivity activity) {
+        View button=activity.findViewById(R.id.add_expense),tabs=activity.findViewById(R.id.tabs);android.graphics.Rect visible=new android.graphics.Rect();
+        assertTrue(button instanceof com.google.android.material.button.MaterialButton);assertTrue(button.getGlobalVisibleRect(visible));assertEquals(button.getHeight(),visible.height());
+        assertTrue(button.getWidth()>=tabs.getWidth());assertTrue(button.getTop()>=tabs.getBottom());assertTrue(button.isEnabled());
+    }
     @Test public void expenseCreateEditDeleteBalancesRecreationAndAccountSwitch() throws Exception {
         try(ActivityScenario<MainActivity> s=ActivityScenario.launch(MainActivity.class)) {
             openGroup(s); add(s);
