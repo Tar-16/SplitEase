@@ -28,7 +28,7 @@ import java.util.*;
 public final class ExpenseFragment extends Fragment {
     private FragmentExpenseBinding binding;
     private ExpenseViewModel model;
-    private boolean rendering;
+    private boolean rendering,showReceiptDebug;
     private AlertDialog confirmation;
     private DatePickerDialog dateDialog;
     private final ActivityResultLauncher<Uri> camera=registerForActivityResult(new ActivityResultContracts.TakePicture(),success->{model.captureResult(success);});
@@ -59,6 +59,7 @@ public final class ExpenseFragment extends Fragment {
         binding.receiptRemove.setOnClickListener(v->{confirmation=new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.receipt_remove_confirm).setNegativeButton(R.string.group_cancel,null).setPositiveButton(R.string.receipt_remove,(d,w)->model.removeReceipt()).show();});
         binding.receiptCameraSettings.setOnClickListener(v->startActivity(new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+requireContext().getPackageName()))));
         binding.receiptRetry.setOnClickListener(v->model.loadReceipt());
+        binding.receiptDebugToggle.setOnClickListener(v->{showReceiptDebug=!showReceiptDebug;binding.receiptDebug.setVisibility(showReceiptDebug?View.VISIBLE:View.GONE);});
         binding.receiptUseAmount.setOnClickListener(v->model.useDetectedAmount());
         binding.receiptCancelCapture.setOnClickListener(v->model.captureResult(false));
         binding.receiptView.setOnClickListener(v->{String id=model.visibleReceiptId();if(!id.isEmpty()){Bundle args=new Bundle();args.putString("receiptId",id);NavHostFragment.findNavController(this).navigate(R.id.receipt_viewer,args);}});
@@ -97,6 +98,10 @@ public final class ExpenseFragment extends Fragment {
                 boolean detected=state.receiptMessage==R.string.receipt_detected&&state.detectedPaise!=null;
                 binding.receiptDetectedResult.setVisibility(detected?View.VISIBLE:View.GONE);
                 binding.receiptDetectedAmount.setText(detected?InrFormatter.format(state.detectedPaise):"");
+                binding.receiptEvidence.setText(detected?getString(state.receiptReliability==com.example.splitease.domain.ReceiptTotalDetector.Reliability.HIGH?R.string.receipt_evidence_high:R.string.receipt_evidence_review,state.receiptEvidence):"");
+                boolean debug=com.example.splitease.BuildConfig.DEBUG&&state.receiptDebug!=null;
+                binding.receiptDebugToggle.setVisibility(debug?View.VISIBLE:View.GONE);
+                binding.receiptDebug.setText(debug?state.receiptDebug:"");binding.receiptDebug.setVisibility(debug&&showReceiptDebug?View.VISIBLE:View.GONE);
                 binding.receiptMessage.setVisibility(detected?View.GONE:View.VISIBLE);
                 binding.receiptMessage.setText(state.receiptMessage);
                 binding.receiptUseAmount.setVisibility(state.editing&&detected?View.VISIBLE:View.GONE);binding.receiptUseAmount.setEnabled(edit&&detected);

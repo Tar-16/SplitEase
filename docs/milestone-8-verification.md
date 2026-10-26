@@ -98,3 +98,74 @@ The separate amount-use button is replaced by a 56dp check control immediately b
 Focused verification: app/test APK builds passed. Existing receipt UI scenarios `scanReviewCorrectSaveViewReplaceRemoveAndDelete` and `cameraDeniedOrCancelledKeepsManualEntryAndCreatesNoExpense` passed **2/2** on API 37 in 15.976s. Assertions cover initial/confirmed accessible descriptions, filling the exact amount, retained detection, repeated taps, no automatic expense creation, confirmation after recreation, manual-edit reset, explicit re-confirmation and hidden controls without a detection. Existing edit/replacement/removal/view/save flows passed in the same scenario. Emulator-only display override: 864 × 1920 at density 420 (approximately 329dp wide), font scale 1.3; original display/font settings were restored. Light/dark screenshots were visually reviewed. No full suite or lint rerun for this presentation-only refinement.
 
 Screenshots: [unconfirmed light](screenshots/milestone-8/confirmation-unconfirmed-light.png), [unconfirmed dark](screenshots/milestone-8/confirmation-unconfirmed-dark.png), [applied light](screenshots/milestone-8/confirmation-applied-light.png), [applied dark](screenshots/milestone-8/confirmation-applied-dark.png).
+
+## OCR accuracy investigation and improvement — 26 October 2026
+
+### Baseline and supplied photograph
+
+The unchanged implementation was run first on `IMG_1730.jpg` using real bundled ML Kit on the API 37 emulator. The correct visual payable amount is **₹701.40**: ₹668.00 plus ₹16.70 CGST and ₹16.70 SGST. The UPI payment matches ₹701.40; Due ₹0.00 means payment is complete.
+
+| Supplied image | Original result | Improved result | Image evidence |
+|---|---|---|---|
+| IMG_1730.jpg | **₹668.00, incorrect suggestion** | **₹701.40, HIGH reliability, TOTAL** | Actual ML Kit image processing, not a text-only parser test; exact tax-component and independent payment agreement |
+
+Baseline capture/normalization produced a 1,512 × 2,016 JPEG from the 3,024 × 4,032 source. Recognition read the final label as `Tota1` and amount as `7O1.4O`, but read the payment amount correctly. The parser's rigid label matching missed the final total and ranked pre-tax NET AMOUNT above generic TOTAL. It neither compared intervening taxes nor used payment evidence.
+
+Initial full-resolution experiments also exposed duplicate/partial words at tile overlaps, creating extra numbers in reconstructed rows. Generated-image testing found decimal words split into `942.` + `82` and a grouping comma recognized as a dot. These were association/numeric interpretation failures, not reasons to pick the largest number or add receipt-specific exceptions.
+
+Only one user photograph was supplied. Its image and raw transcript are **not repository fixtures or screenshots**. The opt-in ReceiptRealImageTest reads `cache/private-ocr-fixture.jpg`, provisioned through debug `run-as`; diagnostics are written to app-private cache for the test, never production logs. Reproduction requires privately supplying the photograph and `-e receiptImagePhase after`; it normally skips without that argument. The original baseline result is historical evidence captured before replacing the pipeline.
+
+### Recognition and extraction
+
+- ReceiptOcr reads the upright source independently of stored JPEG quality, with bounds checks and up to 16 MP. The attachment resize/compress/EXIF policy and repository contracts are unchanged. Originals still disappear after processing/cancellation.
+- Recognition keeps source-scale glyphs in overlapping 2,000px tiles, stepping 1,648px on both axes, with one 45-second total deadline. No blanket downscale to 1,600px OCR width. Incomplete edge words are omitted; spatial containment removes partial duplicate words from overlap, and repeated equivalent observations are deduplicated.
+- Pure-Java Line geometry carries word coordinates and slope; median skew compensation associates aligned columns. Close digit fragments following a decimal point are joined using geometry, rather than concatenating arbitrary quantities/prices. Wrapped standalone amount lines are allowed within a bounded vertical gap.
+- Strict INR token parsing supports ₹/Rs/INR, attached prefixes, Indian/international comma grouping, two decimal places and `/-`. Dates, times, phone-like bare integers, IDs, negatives, zero payable amounts, percentages, malformed grouping and overflow are rejected.
+- Limited lexical label normalization handles common OCR glyph confusions. Numeric O/I/L and dot-for-grouping repairs are permitted only in constrained currency/decimal tokens and require independently read payment or exact component agreement. Corrected results remain REVIEW. No amount or merchant-specific exceptions are in production code.
+- No contrast/sharpening filter or new dependency was added. The source-scale and layout changes addressed measured defects; mild generated fading/skew passed without a filter. Severe blur/warping can still need manual entry.
+
+### Deterministic ranking and reliability
+
+| Evidence | Score/rule |
+|---|---|
+| Grand/Final Total, Net/Amount/Total Payable | Base 100 |
+| Total Amount, Bill Amount, Amount Charged | Base 90 |
+| Amount Paid / Paid Amount | Base 85; positive outstanding prevents treating a partial payment as the bill total |
+| Net Amount | Base 80; tax/charge rows following it reduce unsupported intermediate amounts by 30 |
+| Total | Base 70 |
+| Label-associated value / currency / decimal | +8 / +4 / +3 |
+| Independent matching payment | +25, once |
+| Exact partial payment + outstanding | +30, once; outstanding itself is never the expense suggestion |
+| Exact prior subtotal/net + taxes/charges − discounts | +40, once; total-tax summaries do not double-count detailed tax rows |
+| Numeric OCR repair / bare generic integer | −20 / −20 |
+
+Suggestions require score ≥78 and a ≥20 margin over a distinct competing amount. Repeated values merge without rewarding repeated observations. Conflicting explicit final totals require arithmetic resolution rather than payment alone. Unresolved strong labels, weak evidence, unsupported repairs or close competing amounts result in manual entry. HIGH requires score ≥100 without numeric repair; other accepted suggestions are REVIEW. These are deterministic rule classifications, **not calibrated probabilities**. The card retains its prominent amount and explicit check interaction; applying never saves, and manual edits still clear confirmation.
+
+Rejected subtotal, tax/VAT, discount/coupon/MRP, cash tendered/change, quantity, previous-balance and loyalty fields are not final payable candidates. Debug-only details expose input coordinates/text, extracted amounts, scores and rejection/result reasons. They are opt-in UI, transient, excluded from saved view state, and never written to production logs. Release BuildConfig.DEBUG=false was checked and the release APK compiled.
+
+### Measured coverage and limits
+
+The synthetic corpus is a development regression set, not a held-out population sample. Counts below must not be interpreted as a general accuracy percentage.
+
+| Evaluation layer | Correct suggestions | Incorrect suggestions | Manual/uncertain | Scope |
+|---|---:|---:|---:|---|
+| Synthetic OCR text | 21 | 0 | 18 | 39 labeled fixtures across restaurant, grocery, fuel, utility/broadband, pharmacy, hotel, parking, discounts/service charges, excess tender, zero due, conflicts, damaged text and missing totals |
+| Generated image OCR | 12 | 0 | 3 | 15 generated image evaluations: 12 receipt-type renders, faded/skewed and obscured variants, and an EXIF rotation case, all through actual ML Kit |
+| User photograph, original | 0 | 1 | 0 | Original scanner displayed an incorrect suggestion; it had no explicit reliability class |
+| User photograph, improved | 1 | 0 | 0 | Same photo; HIGH result verified against the visible payable total |
+
+There were no incorrect HIGH or REVIEW suggestions in the measured final fixture set. Expected manual cases include absent/conflicting/obscured totals, unsupported numeric repairs, tax-only fields, invalid amounts and incomplete payment information. Generated faded/skewed text and a single real photo do not establish physical-camera, arbitrary thermal-printer or severe-damage accuracy.
+
+Final focused build/check command:
+
+```bash
+GRADLE_USER_HOME="$PWD/.gradle-home" ./gradlew assembleDebug assembleDebugAndroidTest assembleRelease testDebugUnitTest --tests '*Receipt*Test' lintDebug --no-daemon
+```
+
+BUILD SUCCESSFUL in 38s; **9/9 parser unit tests** passed (5 existing + 4 corpus/geometry/privacy cases). Lint remains **0 errors, 12 existing warnings**: 9 GradleDependency, 1 AndroidGradlePluginVersion, 1 NewerVersionAvailable and 1 UnusedResources. No dependency upgrades, new libraries, migrations or storage-contract changes.
+
+Direct ADB instrumentation on Medium_Phone_API_37.0 / Android 17: **14/14 focused tests passed**, 57.473s, no skips. This includes ReceiptOcrTest (3), the explicit private ReceiptRealImageTest (1), ReceiptImagingTest (3), ReceiptNavigationTest (3), and the four existing receipt SQLite authorization/atomicity/cleanup/migration tests. The UI tests use the Activity Result/FileProvider camera contract with intercepted JPEG output, actual ML Kit and real local storage; they do not prove physical-camera quality. Permission denial/cancellation, stale-result cancellation, manual entry, amount application/reset/repeated taps, recreation, preview/view/replace/remove/delete and private debug-panel toggling passed. The existing 1,000 × 8,000 long-receipt OCR regression and all eight attachment EXIF orientation cases also passed. These legacy regressions/UI captures are not counted again in the declared evaluation-corpus table above.
+
+Light/dark result screenshots were reviewed, retaining the large amount/check and adding a secondary supporting-label/reliability line: [light](screenshots/milestone-8/ocr-improvement/review-light.png), [dark](screenshots/milestone-8/ocr-improvement/review-dark.png), [applied](screenshots/milestone-8/ocr-improvement/applied-light.png). Only synthetic images/accounts appear in committed screenshots. The private evaluation photo and raw reports were removed from the emulator/test scratch files after verification; the user's original photograph is untouched.
+
+A full unrelated application suite was not rerun. API 24, physical thermal-receipt capture, other manufacturers/scripts and exhaustive accessibility remain unverified in this task. Only one real photograph was available, so this work does not establish an unbiased real-world accuracy rate. No unrelated milestone or Firebase work was performed.

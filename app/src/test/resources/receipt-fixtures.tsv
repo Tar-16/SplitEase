@@ -1,0 +1,40 @@
+# Synthetic labeled OCR only; no private photograph/transcript.
+restaurant-gst	126000	RESTAURANT GST RECEIPT\nNet Amount Rs 1,200.00\nCGST 2.5% Rs 30.00\nSGST 2.5% Rs 30.00\nTotal Rs 1,260.00\nUPI Rs 1,260.00\nDue Rs 0.00
+supermarket	187500	Milk 100.00\nRice 1900.00\nSubtotal Rs 2,000.00\nCoupon Rs 125.00\nGRAND TOTAL Rs 1,875.00\nCASH TENDERED Rs 2,000.00\nCHANGE Rs 125.00
+fuel	33120	INVOICE 984726181\nDATE 15/10/2026\nPETROL 3.2 LITRES\nRATE Rs 103.50\nTOTAL AMOUNT INR 331.20
+electricity	210000	ACCOUNT 987654321012\nPrevious balance Rs 500.00\nEnergy Charges 2000.00\nTax 100.00\nBill Amount Rs 2,100.00\nAmount Payable Rs 2,100.00
+broadband	94282	Broadband monthly bill\nNet Amount INR 799.00\nIGST 18% INR 143.82\nTOTAL INR 942.82
+pharmacy	45000	PHARMACY\nMRP 500.00\nDiscount Rs 50.00\nNet Amount Rs 450.00
+hotel	462000	HOTEL INVOICE\nSubtotal Rs 4000.00\nService Charge Rs 400.00\nCGST Rs 110.00\nSGST Rs 110.00\nGrand Total Rs 4620.00\nCard Rs 4620.00
+parking	4000	PARKING\nEntry 12:30\nExit 13:30\nQTY 1\nTotal Rs 40.00
+coupon-service	60000	Subtotal Rs 650.00\nDiscount Rs 80.00\nService Charge Rs 30.00\nTotal Rs 600.00
+tendered-exceeds-total	65000	TOTAL Rs 650.00\nCASH TENDERED Rs 1000.00\nCHANGE RETURNED Rs 350.00
+paid-zero-due	60700	Final Total INR 607.00\nCard INR 607.00\nDUE INR 0.00
+conflicting-finals	UNCERTAIN	GRAND TOTAL Rs 900.00\nFINAL TOTAL Rs 950.00
+faded-corroborated	80400	GRAND T0TAL Rs 8O4.00\nUPI Rs 804.00
+partially-obscured	UNCERTAIN	GRAND TOTAL Rs 8?.00\nTOTAL Rs 200.00
+no-total	UNCERTAIN	GSTIN 22ABCDE1234F1Z5\nPhone 9876543210\nDATE 15/10/2026\nRice Rs 120.00\nCGST 5% Rs 6.00
+indian-grouping	12345678	Amount Charged INR 1,23,456.78
+amount-paid	99900	Amount Paid Rs 999.00\nBalance Due Rs 0.00
+tax-subtotals-only	UNCERTAIN	SUBTOTAL Rs 400.00\nTOTAL TAX Rs 20.00\nTOTAL QTY 4\nLOYALTY POINTS 500
+unlabeled-large-numbers	UNCERTAIN	Invoice 1928475931\nPhone 9988776655\nTOTAL 9988776655
+cash-only	UNCERTAIN	CASH TENDERED 2000.00\nCHANGE 100.00
+uncorroborated-glyph-correction	UNCERTAIN	GRAND TOTAL Rs 7O1.4O
+duplicate-observations	25000	TOTAL PAYABLE Rs 250.00\nTOTAL PAYABLE Rs 250.00\nTOTAL TAX Rs 12.50
+wrapped-columns	75050	NET PAYABLE\nINR 750.50
+two-plausible-totals	UNCERTAIN	TOTAL Rs 500.00\nTOTAL Rs 600.00
+zero-due-only	UNCERTAIN	Due Rs 0.00\nPAID THANK YOU
+date-next-to-total	UNCERTAIN	TOTAL 15/10/2026\nPHONE 9876543210
+negative	UNCERTAIN	Grand Total Rs -123.00
+overflow	UNCERTAIN	Grand Total Rs 92233720368547758.08
+final-discount	99000	Total Rs 1000.00\nDiscount Rs 10.00\nFINAL TOTAL Rs 990.00
+net-conflict	UNCERTAIN	NET AMOUNT Rs 800.00\nGRAND TOTAL Rs 900.00
+separator-corroborated	126000	TOTAL Rs 1.260.00\nUPI Rs 1,260.00
+separator-uncorroborated	UNCERTAIN	TOTAL Rs 1.260.00
+partial-payment	100000	GRAND TOTAL Rs 1000.00\nAmount Paid Rs 300.00\nDue Rs 700.00
+pre-tax-without-final	UNCERTAIN	NET AMOUNT Rs 1000.00\nCGST Rs 25.00\nSGST Rs 25.00
+attached-currency	50000	TOTAL:Rs.500.00
+partial-paid-only	UNCERTAIN	AMOUNT PAID Rs 300.00\nDUE Rs 700.00
+conflicting-finals-paid	UNCERTAIN	Grand Total Rs 500.00\nFinal Total Rs 600.00\nUPI Rs 600.00
+vat-only	UNCERTAIN	TOTAL VAT Rs 25.00
+aggregate-tax-with-components	105000	Net Amount Rs 1000.00\nCGST Rs 25.00\nSGST Rs 25.00\nTotal Tax Rs 50.00\nTOTAL Rs 1050.00

@@ -25,11 +25,13 @@ public final class ExpenseViewModel extends AndroidViewModel {
         public final Bitmap receiptPreview;
         public final String receiptId;
         public final Long detectedPaise;
+        public final ReceiptTotalDetector.Reliability receiptReliability;
+        public final String receiptEvidence,receiptDebug;
         public final int receiptMessage;
         public final Uri captureUri;
         public final boolean capturePending,receiptAmountApplied;
         State(ExpenseViewModel m) { group=m.group; expense=m.original; loading=m.loading; busy=m.busy||m.receiptWorking||!m.text("capture_id").isEmpty(); editing=m.editing(); done=m.done; error=m.error;
-            receiptAmountApplied=m.receiptAmountApplied;receiptPreview=m.receiptPreview;receiptId=m.visibleReceiptId();detectedPaise=m.detectedPaise;receiptMessage=m.receiptMessage;captureUri=m.captureTarget;capturePending=!m.text("capture_id").isEmpty(); }
+            receiptReliability=m.receiptDetection==null?null:m.receiptDetection.reliability;receiptEvidence=m.receiptDetection==null?null:m.receiptDetection.supportingLabel;receiptDebug=m.receiptDetection==null?null:m.receiptDetection.debugReport;receiptAmountApplied=m.receiptAmountApplied;receiptPreview=m.receiptPreview;receiptId=m.visibleReceiptId();detectedPaise=m.detectedPaise;receiptMessage=m.receiptMessage;captureUri=m.captureTarget;capturePending=!m.text("capture_id").isEmpty(); }
     }
     private final AuthService auth;
     private final GroupRepository groups;
@@ -40,6 +42,7 @@ public final class ExpenseViewModel extends AndroidViewModel {
     private Bitmap receiptPreview;
     private ReceiptMetadata receiptMetadata;
     private Long detectedPaise;
+    private ReceiptTotalDetector.Detection receiptDetection;
     private boolean receiptAmountApplied;
     private int receiptMessage=R.string.receipt_hint;
     private boolean receiptWorking,sessionReady;
@@ -81,7 +84,7 @@ public final class ExpenseViewModel extends AndroidViewModel {
                 if(!Objects.equals(id,actor)) {
                     boolean restoringOwner=actor==null&&id!=null&&id.equals(saved.get("owner"));
                     if(!restoringOwner){releaseReceiptDraft(actor);capture.cancel(text("capture_id"));}
-                    epoch++; busy=false; done=false; group=null; original=null;receiptPreview=null;receiptMetadata=null;receiptWorking=false;receiptCheckedExpense=null;detectedPaise=null;receiptAmountApplied=false;captureTarget=null;receiptMessage=R.string.receipt_hint;
+                    epoch++; busy=false; done=false; group=null; original=null;receiptPreview=null;receiptMetadata=null;receiptWorking=false;receiptCheckedExpense=null;detectedPaise=null;receiptDetection=null;receiptAmountApplied=false;captureTarget=null;receiptMessage=R.string.receipt_hint;
                     if(!restoringOwner){saved.remove("capture_id");saved.remove("capture_uri");saved.remove("capture_launched");saved.remove("capture_result");saved.remove("receipt_draft");saved.remove("receipt_remove");}
                     else if(!text("capture_id").isEmpty()&&!text("capture_uri").isEmpty()&&!Boolean.TRUE.equals(saved.get("capture_launched")))captureTarget=Uri.parse(text("capture_uri"));
                     if(id!=null && !id.equals(saved.get("owner"))) {
@@ -214,8 +217,8 @@ public final class ExpenseViewModel extends AndroidViewModel {
             public void onSuccess(ReceiptCaptureService.Scan scan){if(token!=epoch||version!=captureVersion||group==null){scan.preview.recycle();return;}
                 receipts.stage(actor,groupId,scan.jpeg,main,new RepositoryCallback<ReceiptMetadata>(){
                     public void onSuccess(ReceiptMetadata metadata){if(token!=epoch||version!=captureVersion||group==null){scan.preview.recycle();receipts.discardDraft(captureOwner,metadata.id,main,ignoreReceipt());return;}
-                        releaseReceiptDraft(actor);saved.set("receipt_draft",metadata.id);saved.set("receipt_remove",false);receiptPreview=scan.preview;detectedPaise=scan.detection.amountPaise;receiptAmountApplied=false;
-                        receiptWorking=false;clearCapture();receiptMessage=scan.ocrFailed?R.string.receipt_ocr_failed:detectedPaise==null?R.string.receipt_no_total:R.string.receipt_detected;emit();}
+                        releaseReceiptDraft(actor);saved.set("receipt_draft",metadata.id);saved.set("receipt_remove",false);receiptPreview=scan.preview;detectedPaise=scan.detection.amountPaise;receiptDetection=scan.detection;receiptAmountApplied=false;
+                        receiptWorking=false;clearCapture();receiptMessage=scan.ocrFailed?R.string.receipt_ocr_failed:detectedPaise==null?(scan.detection.status==ReceiptTotalDetector.Status.AMBIGUOUS?R.string.receipt_ambiguous:R.string.receipt_no_total):R.string.receipt_detected;emit();}
                     public void onError(Exception failure){scanFailed(token,version);}
                 });
             }
@@ -228,7 +231,7 @@ public final class ExpenseViewModel extends AndroidViewModel {
     public void cameraDenied(){receiptMessage=R.string.receipt_camera_denied;emit();}
     public void cameraUnavailable(){captureResult(false);receiptMessage=R.string.receipt_camera_unavailable;emit();}
     public void useDetectedAmount(){if(editing()&&!busy&&!receiptWorking&&detectedPaise!=null&&!receiptAmountApplied){text("amount",ExpenseAmounts.input(detectedPaise));receiptAmountApplied=true;emit();}}
-    public void removeReceipt(){if(!editing()||busy||receiptWorking)return;releaseReceiptDraft(actor);saved.remove("receipt_draft");saved.set("receipt_remove",true);receiptPreview=null;detectedPaise=null;receiptAmountApplied=false;receiptMessage=R.string.receipt_removed;emit();}
+    public void removeReceipt(){if(!editing()||busy||receiptWorking)return;releaseReceiptDraft(actor);saved.remove("receipt_draft");saved.set("receipt_remove",true);receiptPreview=null;detectedPaise=null;receiptDetection=null;receiptAmountApplied=false;receiptMessage=R.string.receipt_removed;emit();}
     public void consumeDone() { done=false; }
     @Override protected void onCleared() { releaseReceiptDraft(actor);capture.cancel(text("capture_id"));stop();epoch++; }
 

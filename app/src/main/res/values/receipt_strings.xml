@@ -27,4 +27,8 @@
   <string name="receipt_zoom_in">Zoom in</string>
   <string name="receipt_zoom_out">Zoom out</string>
   <string name="receipt_camera_settings">Camera settings</string>
+  <string name="receipt_ambiguous">The receipt has conflicting or uncertain total information. Enter the payable amount manually after checking the receipt.</string>
+  <string name="receipt_evidence_high">Strong supporting evidence · %1$s</string>
+  <string name="receipt_evidence_review">Review carefully · %1$s</string>
+  <string name="receipt_debug_details">OCR details (debug only)</string>
 </resources>
