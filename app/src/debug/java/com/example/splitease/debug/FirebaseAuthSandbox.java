@@ -8,6 +8,9 @@ import androidx.navigation.NavGraph;
 import androidx.navigation.fragment.FragmentNavigator;
 import com.example.splitease.R;
 import com.example.splitease.auth.FirebaseAuthService;
+import com.example.splitease.auth.ProfiledFirebaseAuthBackend;
+import com.example.splitease.data.firebase.FirestoreProfileRepository;
+import com.google.firebase.firestore.*;
 import com.example.splitease.data.firebase.FirebaseSdkAuthBackend;
 import com.example.splitease.databinding.ViewOpenAuthSandboxBinding;
 import com.google.firebase.FirebaseApp;
@@ -19,6 +22,7 @@ public final class FirebaseAuthSandbox {
     public static final String PROJECT="demo-splitease-auth",APP_NAME="SplitEaseAuthEmulator";
     private static FirebaseAuthService service;
     private static FirebaseAuth emulator;
+    private static FirestoreProfileRepository profiles;
     private FirebaseAuthSandbox(){}
     public static synchronized FirebaseAuth sdk(Context context){
         if(emulator!=null)return emulator;
@@ -30,7 +34,10 @@ public final class FirebaseAuthSandbox {
         }
         FirebaseAuth auth=FirebaseAuth.getInstance(app);auth.useEmulator("127.0.0.1",9099);emulator=auth;return auth;
     }
-    public static synchronized FirebaseAuthService service(Context context){if(service==null)service=new FirebaseAuthService(new FirebaseSdkAuthBackend(sdk(context)));return service;}
+    public static synchronized FirestoreProfileRepository profiles(Context context){
+        if(profiles==null){FirebaseAuth auth=sdk(context);FirebaseFirestore db=FirebaseFirestore.getInstance(auth.getApp());db.setFirestoreSettings(new FirebaseFirestoreSettings.Builder().setLocalCacheSettings(MemoryCacheSettings.newBuilder().build()).build());db.useEmulator("127.0.0.1",8080);profiles=new FirestoreProfileRepository(db,auth);}return profiles;
+    }
+    public static synchronized FirebaseAuthService service(Context context){if(service==null)service=new FirebaseAuthService(new ProfiledFirebaseAuthBackend(new FirebaseSdkAuthBackend(sdk(context)),profiles(context)));return service;}
     public static void install(NavController navigation,NavGraph graph){
         if(graph.findNode(R.id.firebase_auth_sandbox)!=null)return;
         FragmentNavigator navigator=navigation.getNavigatorProvider().getNavigator(FragmentNavigator.class);

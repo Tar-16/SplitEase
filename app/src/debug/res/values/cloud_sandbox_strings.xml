@@ -2,8 +2,9 @@
     <item name="firebase_auth_sandbox" type="id"/>
     <string name="cloud_sandbox_open">Open Firebase Auth emulator · debug</string>
     <string name="cloud_sandbox_title">Firebase Auth sandbox</string>
-    <string name="cloud_sandbox_note">Emulator only · demo-splitease-auth · 127.0.0.1:9099. Use test credentials only. No production account or email is created. Usernames are not reserved; profiles arrive in 9C. This screen never opens local groups or data.</string>
+    <string name="cloud_sandbox_note">Emulator only · demo-splitease-auth · 127.0.0.1:9099. Use test credentials only. No production account or email is created. Profiles and unique usernames use the local Firestore Emulator on port 8080. Usernames: 3–30 letters, numbers or underscores. This screen never opens local groups or data.</string>
     <string name="cloud_reset">Reset Firebase password</string>
     <string name="cloud_reset_sent">If an account exists, a reset request has been accepted. Emulator reset links are available only from its local test interface; no real email is sent.</string>
-    <string name="cloud_identity">FIREBASE EMULATOR IDENTITY\nUID: %1$s\nEmail: %2$s\nNo cloud profile or username reservation exists yet.</string>
+    <string name="cloud_identity">FIREBASE EMULATOR IDENTITY\nUID: %1$s\nEmail: %2$s\nUsername: %3$s · Firestore profile ready.</string>
+    <string name="cloud_complete_profile">Complete profile</string>
 </resources>

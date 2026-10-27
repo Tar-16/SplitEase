@@ -48,4 +48,8 @@
     <string name="auth_session_expired">Your session is no longer valid. Please log in again.</string>
     <string name="auth_cloud_unavailable">Cloud authentication is unavailable. Check the configured provider or try again later.</string>
     <string name="auth_unsupported">This action is not available in the current authentication mode.</string>
+    <string name="auth_profile_required">Your account needs a profile. Choose an available username to continue.</string>
+    <string name="auth_cloud_username">Use 3–30 letters, numbers or underscores for your cloud username.</string>
+    <string name="auth_invalid_upi">Enter a valid UPI ID or leave it blank. It is not verified.</string>
+    <string name="auth_user_not_found">No user has that username.</string>
 </resources>

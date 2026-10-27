@@ -90,6 +90,7 @@ public final class AuthViewModel extends AndroidViewModel {
             public void onError(Exception failure){error(failure instanceof AuthException?((AuthException)failure).code:AuthException.Code.AUTH_UNAVAILABLE);}
         });
     }
+    public void completeProfile(String username){if(busy())return;form.setValue(new FormState(true,null,false));auth.completeProfile(username,main,completion(false));}
     public void retryRestore() { clearMessage(); auth.restore(); }
     @Override protected void onCleared() { subscription.close(); }
 }

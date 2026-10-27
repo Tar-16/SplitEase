@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function validName(display, normalized) {
+      return display is string && normalized is string
+        && display.matches('[A-Za-z0-9_]{3,30}') && normalized == display.lower();
+    }
+    function validProfile(p, uid) {
+      return p.keys().hasAll(['uid','normalizedUsername','displayUsername','email','upiId','createdAt','updatedAt'])
+        && p.keys().hasOnly(['uid','normalizedUsername','displayUsername','email','upiId','createdAt','updatedAt'])
+        && p.uid == uid && validName(p.displayUsername,p.normalizedUsername)
+        && p.email is string && p.email == request.auth.token.email.lower()
+        && (p.upiId == null || (p.upiId is string && p.upiId.size() <= 100 && p.upiId.matches('[A-Za-z0-9._-]+@[A-Za-z0-9.-]+')))
+        && p.createdAt is timestamp && p.updatedAt == request.time;
+    }
+    function pairedRegistry(p, uid) {
+      let r = getAfter(/databases/$(database)/documents/usernames/$(p.normalizedUsername)).data;
+      return r.uid == uid && r.displayUsername == p.displayUsername;
+    }
+    match /profiles/{uid} {
+      allow get: if owner(uid);
+      allow create: if owner(uid) && validProfile(request.resource.data,uid)
+        && request.resource.data.createdAt == request.time && pairedRegistry(request.resource.data,uid);
+      allow update: if owner(uid) && validProfile(request.resource.data,uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayUsername','upiId','updatedAt'])
+        && pairedRegistry(request.resource.data,uid);
+      allow list, delete: if false;
+    }
+    match /usernames/{name} {
+      // Exact key lookup only; no email, UPI or private metadata in this document.
+      allow get: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasAll(['uid','displayUsername'])
+        && request.resource.data.keys().hasOnly(['uid','displayUsername'])
+        && request.resource.data.uid == request.auth.uid
+        && validName(request.resource.data.displayUsername,name)
+        && (!exists(/databases/$(database)/documents/usernames/$(name)) || resource.data.uid == request.auth.uid)
+        && getAfter(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.normalizedUsername == name
+        && getAfter(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayUsername == request.resource.data.displayUsername;
+      allow list, delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

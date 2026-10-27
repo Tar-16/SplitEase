@@ -16,3 +16,6 @@ captures/
 firebase-debug.log*
 ui-debug.log*
 hub-*-debug.log*
+
+# Local Firestore emulator diagnostics can contain fixture data.
+firestore-debug.log*

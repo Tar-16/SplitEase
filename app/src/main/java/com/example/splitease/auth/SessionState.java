@@ -3,7 +3,7 @@ package com.example.splitease.auth;
 import com.example.splitease.model.User;
 
 public final class SessionState {
-    public enum Status { RESTORING, SIGNED_OUT, SIGNED_IN, UNAVAILABLE }
+    public enum Status { RESTORING, SIGNED_OUT, SIGNED_IN, UNAVAILABLE, PROFILE_REQUIRED }
     public enum Backend { LOCAL, FIREBASE }
     public final Status status;
     public final User user;
@@ -16,5 +16,6 @@ public final class SessionState {
     public static SessionState restoring(Backend backend) { return new SessionState(Status.RESTORING,null,backend); }
     public static SessionState signedOut(Backend backend) { return new SessionState(Status.SIGNED_OUT,null,backend); }
     public static SessionState cloudSignedIn(User identity) { return new SessionState(Status.SIGNED_IN,identity,Backend.FIREBASE); }
+    public static SessionState profileRequired(User identity) { return new SessionState(Status.PROFILE_REQUIRED,identity,Backend.FIREBASE); }
     public static SessionState unavailable(Backend backend) { return new SessionState(Status.UNAVAILABLE,null,backend); }
 }

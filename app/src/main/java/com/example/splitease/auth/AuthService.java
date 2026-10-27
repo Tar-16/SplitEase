@@ -14,5 +14,6 @@ public interface AuthService {
     default void resetPassword(String email, Executor executor, RepositoryCallback<Boolean> callback) {
         executor.execute(() -> callback.onError(new AuthException(AuthException.Code.UNSUPPORTED)));
     }
+    default void completeProfile(String username,Executor executor,RepositoryCallback<User> callback){executor.execute(()->callback.onError(new AuthException(AuthException.Code.UNSUPPORTED)));}
     void updateUpi(String upiId, Executor executor, RepositoryCallback<User> callback);
 }

@@ -23,6 +23,10 @@ public final class AuthViews {
     public static int error(AuthException.Code code) {
         if (code == null) return R.string.auth_storage;
         switch (code) {
+            case PROFILE_REQUIRED: return R.string.auth_profile_required;
+            case INVALID_USERNAME: return R.string.auth_cloud_username;
+            case INVALID_UPI: return R.string.auth_invalid_upi;
+            case USER_NOT_FOUND: return R.string.auth_user_not_found;
             case USERNAME_REQUIRED: return R.string.auth_username_required;
             case INVALID_EMAIL: return R.string.auth_invalid_email;
             case WEAK_PASSWORD: return R.string.auth_weak_password;

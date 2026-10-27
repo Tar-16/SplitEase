@@ -69,7 +69,8 @@ public final class FirebaseAuthService implements AuthService, AutoCloseable {
                 mutationPending=false;
                 if(token!=generation||closing.get()){if(token<lastLogoutGeneration){backend.signOut();if(!closing.get())publish(SessionState.signedOut(FIREBASE));}return;}
                 busy=false;validatingUid=null;
-                if(code(error)==SESSION_EXPIRED||code(error)==INVALID_CREDENTIALS){backend.signOut();publish(SessionState.signedOut(FIREBASE));}
+                if(backend.current()==null||code(error)==SESSION_EXPIRED||code(error)==INVALID_CREDENTIALS){backend.signOut();publish(SessionState.signedOut(FIREBASE));}
+                else if(code(error)==PROFILE_REQUIRED&&backend.current()!=null)publish(SessionState.profileRequired(backend.current()));
                 else publish(SessionState.unavailable(FIREBASE));
             }finally{finished();}}
         });
@@ -105,12 +106,12 @@ public final class FirebaseAuthService implements AuthService, AutoCloseable {
                         mutationPending=false;
                         if(token!=generation||closing.get()){backend.signOut();if(!closing.get())publish(SessionState.signedOut(FIREBASE));fail(executor,callback,CANCELLED);return;}
                         busy=false;
-                        if(error!=null){if(code(error)==SESSION_EXPIRED)backend.signOut();publish(SessionState.signedOut(FIREBASE));fail(executor,callback,code(error));return;}
+                        if(error!=null){if(code(error)==SESSION_EXPIRED)backend.signOut();publish(backend.current()!=null?SessionState.profileRequired(backend.current()):SessionState.signedOut(FIREBASE));fail(executor,callback,code(error));return;}
                         if(!valid(user)||backend.current()==null||!user.id.equals(backend.current().id)){backend.signOut();publish(SessionState.signedOut(FIREBASE));fail(executor,callback,SESSION_EXPIRED);return;}
                         publish(SessionState.cloudSignedIn(user));executor.execute(()->{if(token==generation&&!closing.get())callback.onSuccess(user);else callback.onError(new AuthException(CANCELLED));});
                     }finally{finished();}}
                 };
-                if(signup)backend.register(AccountValidation.normalize(email),copy,worker,result);else backend.login(AccountValidation.normalize(email),copy,worker,result);
+                if(signup)backend.registerProfile(username,AccountValidation.normalize(email),copy,worker,result);else backend.login(AccountValidation.normalize(email),copy,worker,result);
             }finally{Arrays.fill(copy,'\0');}
         },executor,callback);
         if(!accepted)Arrays.fill(copy,'\0');
@@ -128,7 +129,30 @@ public final class FirebaseAuthService implements AuthService, AutoCloseable {
             public void onError(Exception error){try{if(token!=generation||closing.get()){fail(executor,callback,CANCELLED);return;}busy=false;fail(executor,callback,code(error));}finally{finished();}}
         });
     },executor,callback);}
-    @Override public void updateUpi(String upi,Executor executor,RepositoryCallback<User> callback){fail(executor,callback,UNSUPPORTED);}
+    @Override public void completeProfile(String username,Executor executor,RepositoryCallback<User> callback){profileMutation(username,false,executor,callback);}
+    @Override public void updateUpi(String upi,Executor executor,RepositoryCallback<User> callback){
+        // Preserve the auth-only 9B seam: unsupported until a profile-backed session exists.
+        enqueue(()->{if(state.status!=SessionState.Status.SIGNED_IN){fail(executor,callback,UNSUPPORTED);return;}profileMutation(upi,true,executor,callback);},executor,callback);
+    }
+    private void profileMutation(String value,boolean update,Executor executor,RepositoryCallback<User> callback){enqueue(()->{
+        if(busy||mutationPending){fail(executor,callback,BUSY);return;}
+        if(backend.current()==null){fail(executor,callback,SIGNED_OUT);return;}
+        if(!update&&state.status!=SessionState.Status.PROFILE_REQUIRED&&state.status!=SessionState.Status.UNAVAILABLE){fail(executor,callback,BUSY);return;}
+        SessionState previous=state;long token=++generation;busy=true;mutationPending=true;requests++;publish(SessionState.restoring(FIREBASE));
+        RepositoryCallback<User> result=new RepositoryCallback<User>(){
+            public void onSuccess(User user){finish(user,null);}
+            public void onError(Exception error){finish(null,error);}
+            private void finish(User user,Exception error){try{
+                mutationPending=false;
+                if(token!=generation||closing.get()){backend.signOut();if(!closing.get())publish(SessionState.signedOut(FIREBASE));fail(executor,callback,CANCELLED);return;}
+                busy=false;
+                if(error!=null){publish(backend.current()==null?SessionState.signedOut(FIREBASE):update?previous:SessionState.profileRequired(backend.current()));fail(executor,callback,code(error));return;}
+                if(!valid(user)||backend.current()==null||!user.id.equals(backend.current().id)){beginRestore();fail(executor,callback,SESSION_EXPIRED);return;}
+                publish(SessionState.cloudSignedIn(user));executor.execute(()->{if(token==generation&&!closing.get())callback.onSuccess(user);else callback.onError(new AuthException(CANCELLED));});
+            }finally{finished();}}
+        };
+        if(update)backend.updateUpi(value,worker,result);else backend.completeProfile(value,worker,result);
+    },executor,callback);}
     private void finished(){requests--;if(closing.get()&&requests==0)worker.shutdown();}
     @Override public void close(){if(!closing.compareAndSet(false,true))return;authChanges.close();for(Listener listener:listeners)listener.close();try{worker.execute(()->{generation++;if(requests==0)worker.shutdown();});}catch(RejectedExecutionException ignored){/* Last accepted callback already closed the worker. */}}
 }
