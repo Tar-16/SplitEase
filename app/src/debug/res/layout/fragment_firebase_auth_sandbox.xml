@@ -1,0 +1,5 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+    <com.google.android.material.button.MaterialButton android:id="@+id/back" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginHorizontal="24dp" android:text="@string/group_back"/>
+    <com.google.android.material.button.MaterialButton android:id="@+id/restore_retry" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginHorizontal="24dp" android:visibility="gone" android:text="@string/retry"/>
+    <include android:id="@+id/form" layout="@layout/fragment_signup" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+</LinearLayout>

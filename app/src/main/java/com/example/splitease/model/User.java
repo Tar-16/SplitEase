@@ -2,7 +2,7 @@ package com.example.splitease.model;
 
 import java.util.*;
 
-/** Immutable data snapshot. Monetary values are integer paise; dates are UTC epoch millis. */
+/** Immutable user snapshot. Local records use UUIDs; a FIREBASE-scoped auth snapshot uses the opaque SDK UID and must never be inserted into SQLite. */
 public final class User {
     public final String id;
     public final String username;

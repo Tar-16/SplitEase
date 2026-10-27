@@ -45,6 +45,7 @@ public final class MainActivity extends AppCompatActivity {
             // Restore Navigation's pending stack behind the startup gate. Identity is checked below.
             NavGraph initial=navigation.getNavInflater().inflate(R.navigation.main_nav_graph);
             initial.setStartDestination(navigationUserId == null ? R.id.login : R.id.groups);
+            com.example.splitease.debug.FirebaseAuthSandbox.install(navigation,initial);
             navigation.setGraph(initial);
         }
         AuthViewModel model=new ViewModelProvider(this).get(AuthViewModel.class);
@@ -54,10 +55,10 @@ public final class MainActivity extends AppCompatActivity {
     private boolean isHome(int id) { return id == R.id.groups || id == R.id.recurring || id == R.id.profile; }
     private void synchronizeNavigation() {
         if (synchronizing) return;
-        boolean ready=session.status == SessionState.Status.SIGNED_IN || session.status == SessionState.Status.SIGNED_OUT;
+        boolean ready=session.backend==SessionState.Backend.LOCAL&&(session.status == SessionState.Status.SIGNED_IN || session.status == SessionState.Status.SIGNED_OUT);
         binding.mainContent.setVisibility(ready ? View.VISIBLE : View.INVISIBLE);
         binding.startup.setVisibility(ready ? View.GONE : View.VISIBLE);
-        boolean unavailable=session.status == SessionState.Status.UNAVAILABLE;
+        boolean unavailable=session.backend!=SessionState.Backend.LOCAL||session.status == SessionState.Status.UNAVAILABLE;
         binding.startupProgress.setVisibility(unavailable ? View.GONE : View.VISIBLE);
         binding.startupMessage.setText(unavailable ? R.string.session_unavailable : R.string.restoring_session);
         binding.retry.setVisibility(unavailable ? View.VISIBLE : View.GONE);
@@ -65,7 +66,7 @@ public final class MainActivity extends AppCompatActivity {
         boolean authenticated=session.status == SessionState.Status.SIGNED_IN;
         String userId=authenticated ? session.user.id : null;
         NavDestination current=navigation.getCurrentDestination();
-        boolean allowed=current != null && (authenticated ? (isHome(current.getId()) || current.getId()==R.id.create_group || current.getId()==R.id.group_detail || current.getId()==R.id.expense_screen || current.getId()==R.id.settlements_screen || current.getId()==R.id.bill_screen || current.getId()==R.id.receipt_viewer) : current.getId()==R.id.login || current.getId()==R.id.signup);
+        boolean allowed=current != null && (com.example.splitease.debug.FirebaseAuthSandbox.acceptsDestination(current.getId()) || (authenticated ? (isHome(current.getId()) || current.getId()==R.id.create_group || current.getId()==R.id.group_detail || current.getId()==R.id.expense_screen || current.getId()==R.id.settlements_screen || current.getId()==R.id.bill_screen || current.getId()==R.id.receipt_viewer) : current.getId()==R.id.login || current.getId()==R.id.signup));
         if (!allowed || !Objects.equals(navigationUserId,userId)) {
             binding.mainContent.setVisibility(View.INVISIBLE);
             synchronizing=true;
@@ -76,6 +77,7 @@ public final class MainActivity extends AppCompatActivity {
                 int target=authenticated ? R.id.groups : R.id.login;
                 NavGraph graph=navigation.getNavInflater().inflate(R.navigation.main_nav_graph);
                 graph.setStartDestination(target);
+                com.example.splitease.debug.FirebaseAuthSandbox.install(navigation,graph);
                 navigation.setGraph(graph);
                 // Also discards any pending restored stack from a different or signed-out account.
                 navigation.navigate(target,null,new NavOptions.Builder().setPopUpTo(R.id.main_nav_graph,true).setLaunchSingleTop(true).build());

@@ -22,6 +22,7 @@ public final class LoginFragment extends Fragment {
         model=new ViewModelProvider(requireActivity()).get(AuthViewModel.class);
         ViewCompat.setAccessibilityHeading(binding.heading,true);
         model.enterForm("login");
+        com.example.splitease.debug.FirebaseAuthSandbox.attach((ViewGroup)binding.switchScreen.getParent(),NavHostFragment.findNavController(this));
         binding.password.setSaveFromParentEnabled(false);
         binding.submit.setOnClickListener(v -> submit());
         binding.password.setOnEditorActionListener((v,action,event) -> { if (action == EditorInfo.IME_ACTION_DONE) { submit(); return true; } return false; });

@@ -1,6 +1,6 @@
 # SplitEase
 
-Java Android expense-sharing app for Indian users. Milestones 1–8 provide local groups, expenses, settlements, recurring bills and receipt OCR/attachments. Milestone 9A adds Firebase SDK/configuration foundation while SQLite and local authentication remain active. Local authentication and profiles are preserved. Recurring now tracks independent monthly contributions. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase uploads are not included. UPI handoff does not verify payments.
+Java Android expense-sharing app for Indian users. Milestones 1–8 provide local groups, expenses, settlements, recurring bills and receipt OCR/attachments. Milestones 9A–9B add Firebase SDK configuration and an isolated, emulator-tested AuthService adapter while SQLite and local authentication remain active. Local authentication and profiles are preserved. Recurring now tracks independent monthly contributions. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase uploads are not included. UPI handoff does not verify payments.
 
 ## Setup and toolchain
 
@@ -30,7 +30,7 @@ Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Initial dependency resol
 app/src/main/java/com/example/splitease/
   SplitEaseApplication.java   Composition root; opens database asynchronously
   ui/                         Activity, auth, Profile, Groups and Expenses screens/ViewModels, Recurring tracker
-  auth/                       Replaceable AuthService, LocalAuthService and SessionStore
+  auth/                       AuthService, LocalAuthService, FirebaseAuthService and local SessionStore
   model/                      Immutable User, Group, GroupMember, Expense,
                               ExpenseSplit, Settlement, RecurringBill,
                               RecurringBillCycle, RecurringBillContribution
@@ -203,10 +203,36 @@ In debug builds, Profile → **Firebase setup · debug only** → **Check Fireba
 
 **Cost boundary:** Spark only. No billing account, payment method, Blaze upgrade, Cloud Storage, Functions, Analytics, collection creation, rules deployment, Firestore query/write, Firebase sign-in or account creation is performed. A config file cannot prove the current plan: the owner must confirm Spark in the Firebase console before any later cloud feature activation. No billing/plan setting was changed. [Firebase pricing](https://firebase.google.com/pricing) distinguishes Spark from paid-plan allowances; do not enable billing to resolve a limitation.
 
-Future adapters belong behind AuthService and the existing asynchronous repository contracts; choose them only in the composition root when a later milestone authorizes replacement. Keep SDK types, documents and queries out of UI/domain/contracts, explicitly design Firebase UID mapping to canonical domain UUIDs, retain member-checked authorization and transactional accounting, and use fresh Firebase accounts/data with no local migration. ReceiptStorageRepository remains unchanged and local. No adapters or cloud feature flows are implemented in 9A.
+Future adapters belong behind AuthService and the existing asynchronous repository contracts; choose them only in the composition root when a later milestone authorizes replacement. Keep SDK types, documents and queries out of UI/domain/contracts, use Firebase Auth UIDs as opaque cloud user identities, keeping local UUID identities separate, retain member-checked authorization and transactional accounting, and use fresh Firebase accounts/data with no local migration. ReceiptStorageRepository remains unchanged and local. No adapters or cloud feature flows were implemented in 9A; 9B adds only the isolated authentication adapter described below.
 
 Evidence, exact checks and limits: [Milestone 9A verification](docs/milestone-9a-verification.md). Official setup/version references: [Android setup](https://firebase.google.com/docs/android/setup), [release notes](https://firebase.google.com/support/release-notes/android).
 
+## Firebase authentication adapter (Milestone 9B)
+
+`FirebaseAuthService` implements the existing asynchronous AuthService using `FirebaseSdkAuthBackend`. It supports email/password signup/login/logout, SDK session restoration, invalid-session validation, auth-state changes and password reset. It preserves the existing signup policy, normalized email and safe errors. Firebase owns credential persistence; the application does not store Firebase passwords, hashes or tokens. Shared preferences are excluded from backup/device transfer. Restoring a cached session requires online reload/token validation; network failure keeps the sandbox unavailable with retry/logout rather than exposing authenticated data.
+
+**The application still uses LocalAuthService and SQLite by default.** Release builds have no selectable Firebase mode. Debug Login and Profile offer **Open Firebase Auth emulator · debug**. This opens a Fragment using the existing signup fields, ViewBinding and AuthViewModel, with its own injected adapter. A separately named FirebaseApp targets only `demo-splitease-auth` on loopback port 9099; the real/default FirebaseApp is untouched. Cloud sign-in stays inside that screen and cannot open local groups or adopt a SQLite identity. The username field is validated but **not reserved or persisted**; cloud snapshots have no profile username/UPI until 9C. Firebase UIDs are used unchanged, never mapped to local UUIDs or inserted into SQLite.
+
+Start the official local Auth Emulator (Node 20+; verification used Node 24 and CLI 15.34.1):
+
+```sh
+npx --yes --package firebase-tools@15.34.1 firebase emulators:start \
+  --only auth --project demo-splitease-auth \
+  --config tools/firebase-auth-emulator/firebase.json
+adb -s emulator-5554 reverse tcp:9099 tcp:9099
+./gradlew installDebug
+```
+
+Use only test credentials. No CLI login, live Firebase accounts, real reset emails, Firestore or billing is needed. Debug permits cleartext only to loopback for the emulator; release keeps its normal network policy. Missing emulator connectivity yields a recoverable error, with no production fallback. Remove the ADB reverse when finished: `adb -s emulator-5554 reverse --remove tcp:9099`. Emulator accounts are temporary unless explicitly exported; no export or credentials belong in Git.
+
+Opt-in SDK tests use `-e authEmulator true`; ordinary connected runs skip them. Reproducible commands, the separate force-stop restoration check, results and limits are in [Milestone 9B verification](docs/milestone-9b-verification.md).
+
+### Milestone 9C integration boundary
+
+Cloud application access must wait for a complete Firestore profile and unique normalized username reservation keyed to the Firebase UID. Firebase Auth creation and a Firestore transaction cannot commit atomically together. Create the Auth identity, then idempotently transact the username reservation plus profile together; treat an authenticated identity without a completed profile as **onboarding pending**, never application ready. Retry/reconcile after restart and ambiguous network outcomes. A username conflict should allow another choice. Only compensate by deleting a newly created Auth account after establishing that no profile/reservation committed; never blindly delete on a timeout. If compensation fails, retain a recoverable pending account. Later member-scoped rules must enforce ownership, reservation uniqueness and profile consistency server-side; no client-only security. None of these Firestore operations or rules are implemented/deployed in 9B.
+
+Cloud repositories, session selection and navigation must switch together when authorized, with an explicit backend/identity boundary. Existing local UUID validators must not reject opaque Firebase UIDs. Local accounts/data/receipts will not be migrated. Verify the real project remains Spark and enable/configure email/password through the owner before any live rollout; do not add billing, Storage, Functions or Analytics.
+
 ## Remaining scope
 
-API 24/physical-device coverage and exhaustive accessibility/device testing remain future checks. Receipt OCR remains local. Firebase SDK foundation is present; authentication replacement and Firestore repositories remain future work using fresh accounts/data. No work beyond Milestone 9A is included. See AGENTS.md for architecture rules.
+API 24/physical-device coverage and exhaustive accessibility/device testing remain future checks. Receipt OCR remains local. Firebase authentication is implemented behind an isolated emulator path; production auth selection, profiles/username reservation and Firestore repositories remain future work with fresh accounts/data. Live Firebase account/reset-email behavior is not verified. No work beyond Milestone 9B is included. See AGENTS.md for architecture rules.

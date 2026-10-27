@@ -43,4 +43,9 @@
     <string name="logout_action">Log out</string>
     <string name="profile_empty_upi">Add a UPI ID if you want. Leave blank to remove it.</string>
     <string name="working">Please wait…</string>
+    <string name="auth_network">Could not reach authentication. Check your connection and try again.</string>
+    <string name="auth_rate_limited">The authentication service is limiting requests. Please try again later.</string>
+    <string name="auth_session_expired">Your session is no longer valid. Please log in again.</string>
+    <string name="auth_cloud_unavailable">Cloud authentication is unavailable. Check the configured provider or try again later.</string>
+    <string name="auth_unsupported">This action is not available in the current authentication mode.</string>
 </resources>

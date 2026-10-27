@@ -11,3 +11,8 @@ captures/
 
 # Supply the real per-project Firebase configuration locally; never invent it.
 /app/google-services.json
+
+# Local Auth emulator scratch logs/data are never application fixtures.
+firebase-debug.log*
+ui-debug.log*
+hub-*-debug.log*

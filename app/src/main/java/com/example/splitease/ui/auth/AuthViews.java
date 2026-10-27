@@ -32,6 +32,11 @@ public final class AuthViews {
             case INVALID_CREDENTIALS: return R.string.auth_invalid_credentials;
             case BUSY: return R.string.auth_busy;
             case SIGNED_OUT: return R.string.auth_signed_out;
+            case NETWORK: return R.string.auth_network;
+            case RATE_LIMITED: return R.string.auth_rate_limited;
+            case SESSION_EXPIRED: return R.string.auth_session_expired;
+            case AUTH_UNAVAILABLE: return R.string.auth_cloud_unavailable;
+            case UNSUPPORTED: return R.string.auth_unsupported;
             case CANCELLED: return R.string.auth_cancelled;
             default: return R.string.auth_storage;
         }

@@ -16,9 +16,10 @@ import java.util.concurrent.Executor;
 /** Activity-scoped presentation state survives recreation; passwords are never retained. */
 public final class AuthViewModel extends AndroidViewModel {
     public static final class FormState {
-        public final boolean busy, saved;
+        public final boolean busy, saved, resetSent;
         public final AuthException.Code error;
-        FormState(boolean busy, AuthException.Code error, boolean saved) { this.busy=busy; this.error=error; this.saved=saved; }
+        FormState(boolean busy, AuthException.Code error, boolean saved) { this(busy,error,saved,false); }
+        FormState(boolean busy, AuthException.Code error, boolean saved,boolean resetSent) { this.busy=busy; this.error=error; this.saved=saved;this.resetSent=resetSent; }
     }
     private String formOwner;
     private final AuthService auth;
@@ -27,8 +28,11 @@ public final class AuthViewModel extends AndroidViewModel {
     private final MutableLiveData<FormState> form=new MutableLiveData<>(new FormState(false,null,false));
     private final ObservableQuery.Subscription subscription;
     public AuthViewModel(@NonNull Application application) {
+        this(application,((SplitEaseApplication)application).auth());
+    }
+    public AuthViewModel(@NonNull Application application,AuthService service) {
         super(application);
-        auth=((SplitEaseApplication)application).auth();
+        auth=service;
         Handler handler=new Handler(Looper.getMainLooper()); main=handler::post;
         subscription=auth.sessions().subscribe(main,new ObservableQuery.Observer<SessionState>() {
             @Override public void onChanged(SessionState value) { session.setValue(value); }
@@ -77,6 +81,14 @@ public final class AuthViewModel extends AndroidViewModel {
     public void saveUpi(String upi) {
         if (busy()) return;
         form.setValue(new FormState(true,null,false)); auth.updateUpi(upi,main,completion(true));
+    }
+    public void resetPassword(String email) {
+        if(busy())return;
+        if(!AccountValidation.validEmail(email)){error(AuthException.Code.INVALID_EMAIL);return;}
+        form.setValue(new FormState(true,null,false));auth.resetPassword(email,main,new RepositoryCallback<Boolean>(){
+            public void onSuccess(Boolean value){form.setValue(new FormState(false,null,false,true));}
+            public void onError(Exception failure){error(failure instanceof AuthException?((AuthException)failure).code:AuthException.Code.AUTH_UNAVAILABLE);}
+        });
     }
     public void retryRestore() { clearMessage(); auth.restore(); }
     @Override protected void onCleared() { subscription.close(); }

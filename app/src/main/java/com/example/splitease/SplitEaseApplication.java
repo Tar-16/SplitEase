@@ -13,7 +13,7 @@ import com.example.splitease.repository.*;
 /** Composition root: creates the storage adapter without exposing SQL to screens. */
 public final class SplitEaseApplication extends Application {
     private SqliteRepositories repositories;
-    private AuthService auth;
+    private LocalAuthService auth;
     private com.example.splitease.platform.receipts.ReceiptCaptureService receiptCapture;
     private com.example.splitease.reminders.RecurringReminders reminders;
     private volatile Exception initializationError;

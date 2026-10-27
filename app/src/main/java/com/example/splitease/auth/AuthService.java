@@ -11,5 +11,8 @@ public interface AuthService {
     void register(String username, String email, char[] password, Executor executor, RepositoryCallback<User> callback);
     void login(String email, char[] password, Executor executor, RepositoryCallback<User> callback);
     void logout(Executor executor, RepositoryCallback<Boolean> callback);
+    default void resetPassword(String email, Executor executor, RepositoryCallback<Boolean> callback) {
+        executor.execute(() -> callback.onError(new AuthException(AuthException.Code.UNSUPPORTED)));
+    }
     void updateUpi(String upiId, Executor executor, RepositoryCallback<User> callback);
 }
