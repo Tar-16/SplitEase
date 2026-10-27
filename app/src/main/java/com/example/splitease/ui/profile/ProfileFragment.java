@@ -21,6 +21,7 @@ public final class ProfileFragment extends Fragment {
     }
     @Override public void onViewCreated(@NonNull View view,@Nullable Bundle state) {
         AuthViewModel model=new ViewModelProvider(requireActivity()).get(AuthViewModel.class);
+        com.example.splitease.debug.FirebaseDiagnostics.attach((ViewGroup)binding.heading.getParent(),getViewLifecycleOwner());
         ViewCompat.setAccessibilityHeading(binding.heading,true);
         model.enterForm("profile");
         binding.saveUpi.setOnClickListener(v -> { AuthViews.hideKeyboard(view); model.saveUpi(AuthViews.text(binding.upi.getText())); });

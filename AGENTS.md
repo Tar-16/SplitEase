@@ -119,3 +119,12 @@
 - If a feature cannot be implemented without billing, report the limitation and propose a zero-cost alternative.
 - Prefer temporary feature limitations over introducing any possibility of cloud charges.
 - Never change these financial restrictions without explicit user approval.
+
+## Milestone 9A Firebase foundation
+
+- Google Services plugin 4.5.0 and Firebase BoM 35.1.0 pin Auth/Firestore only. Keep Java 17, minSdk 24, XML/ViewBinding and the existing toolchain. Real app/google-services.json is local/ignored, must match com.example.splitease, and must never be replaced with fake config. Never log API keys/options wholesale.
+- Default FirebaseApp auto-initializes through FirebaseInitProvider. Keep LocalAuthService and SqliteRepositories active in SplitEaseApplication; no second auth/session store, data reset, cloud adapter selection or local-to-cloud migration is authorized.
+- FirebaseDiagnostics is build-variant scoped: debug Profile UI only; release hook is empty. Its local SDK getters and one manual fixed-host HTTPS HEAD are not cloud authorization tests. Never add Firestore document reads/writes, Firebase sign-in/account creation, service enablement or rules deployment to a diagnostic. Do not transmit local data/credentials/API keys in probes.
+- JSON/SDK initialization and network reachability cannot verify Spark status, enabled services or rules. Report those separately; require owner console verification of Spark before later cloud feature activation. Never enable billing or assume a paid-plan free tier satisfies the Spark-only restrictions above.
+- Future Firebase adapters reuse AuthService and asynchronous repositories at the composition root; SDK types stay out of UI/domain/contracts. Fresh cloud accounts/data only. ReceiptStorageRepository stays unchanged/local; the historical M8 Storage design does not authorize Cloud Storage under current cost restrictions.
+- Record evidence in docs/milestone-9a-verification.md. Stop after 9A; no Firebase auth replacement or Firestore repositories yet.

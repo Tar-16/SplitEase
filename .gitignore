@@ -8,3 +8,6 @@ local.properties
 *.jks
 *.keystore
 captures/
+
+# Supply the real per-project Firebase configuration locally; never invent it.
+/app/google-services.json

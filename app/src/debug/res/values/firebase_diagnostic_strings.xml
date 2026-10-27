@@ -1,0 +1,9 @@
+<resources>
+    <string name="firebase_diagnostic_title">Firebase setup · debug only</string>
+    <string name="firebase_diagnostic_hint">Check SDK configuration and HTTPS endpoint reachability. Local accounts and SQLite remain active. This does not sign in, read or write Firestore documents, or verify billing.</string>
+    <string name="firebase_diagnostic_check">Check Firebase setup</string>
+    <string name="firebase_diagnostic_running">Checking configuration and HTTPS reachability…</string>
+    <string name="firebase_diagnostic_unavailable">Firebase configuration or SDK initialization is unavailable. Local functionality remains active.</string>
+    <string name="firebase_diagnostic_reachable">SDKs initialized for %1$s. HTTPS endpoint reachable (HTTP %2$d). Authenticated Firestore access, rules, enabled services and Spark plan are not verified.</string>
+    <string name="firebase_diagnostic_offline">SDKs initialized for %1$s. HTTPS endpoint unreachable. Authenticated Firestore access, rules, enabled services and Spark plan are not verified.</string>
+</resources>

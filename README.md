@@ -1,6 +1,6 @@
 # SplitEase
 
-Java Android expense-sharing app for Indian users. Milestone 8 adds private receipt photos, on-device OCR suggestions and editable attachments to the existing expenses, groups, settlements and recurring tracker. Local authentication and profiles are preserved. Recurring now tracks independent monthly contributions. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase uploads are not included. UPI handoff does not verify payments.
+Java Android expense-sharing app for Indian users. Milestones 1–8 provide local groups, expenses, settlements, recurring bills and receipt OCR/attachments. Milestone 9A adds Firebase SDK/configuration foundation while SQLite and local authentication remain active. Local authentication and profiles are preserved. Recurring now tracks independent monthly contributions. The existing SQLite foundation, single-Activity navigation and light/dark identity are preserved. Firebase uploads are not included. UPI handoff does not verify payments.
 
 ## Setup and toolchain
 
@@ -13,7 +13,7 @@ Open the directory in Android Studio supporting AGP 9.2 (Panda 4 or newer). Inst
 - Existing dependencies: AppCompat 1.7.1, Core 1.17.0, Activity 1.12.4, Fragment 1.8.9, Navigation Fragment/UI 2.9.8, Material Components 1.13.0.
 - Added: Bouncy Castle `bcprov-jdk18on:1.83` for portable Argon2id across API 24+, AndroidX Test Runner 1.6.2 and AndroidX Test JUnit 1.2.1. JUnit 4.13.2 remains for local tests.
 - Lifecycle ViewModel/LiveData 2.11.0; WorkManager 2.12.0 for local reminders; application version name 0.8.0.
-- Bundled ML Kit text-recognition 16.0.1 and ExifInterface 1.4.2 for receipt processing. No Firebase Auth/Firestore/Storage SDK was added.
+- Bundled ML Kit text-recognition 16.0.1 and ExifInterface 1.4.2 for receipt processing. Milestone 9A adds Firebase Authentication and Firestore via BoM 35.1.0 and Google Services plugin 4.5.0. Cloud Storage, Functions and Analytics SDKs are not included.
 - XML Android Views and ViewBinding; no Kotlin application sources or Compose. Dependencies may internally use Kotlin.
 
 ```sh
@@ -73,7 +73,7 @@ The editor accepts a title, positive INR amount (plain digits with up to two dec
 
 `GroupDetails` includes immutable expense, balance and public-name snapshots in the same worker read. It retains current members and historical identities referenced by expenses or recorded settlements. Balances derive from the existing `Balances` domain logic; positive is owed to the member, negative is owed by the member, zero is settled. These aggregate nets do not imply specific debtor/creditor payment pairs. They are never persisted and recurring contributions never enter them. Home and Detail refresh after mutations and account switches. The summary total means all expense amounts, not outstanding debt; latest expense date is an actual expense date, not an invented modification timestamp.
 
-Milestone 5 required no schema or dependency changes. Milestones 6–7 extend that release with settlements/UPI handoff and recurring tracking, described below. Milestone 8 adds local receipt OCR below; Firebase remains outside scope.
+Milestone 5 required no schema or dependency changes. Milestones 6–7 extend that release with settlements/UPI handoff and recurring tracking, described below. Milestone 8 adds local receipt OCR below; Milestone 9A adds SDK foundation only, not cloud authentication or data adapters.
 
 ## Schema and migrations
 
@@ -147,6 +147,8 @@ Local accounts/data are device-specific. Firebase will start fresh; no local-acc
 
 ## Verification
 
+Milestone 9A: debug/release builds and **32/32 unit tests** passed; **7/7 focused API 37 tests** verified Firebase initialization, a non-writing HTTPS probe and local authentication/navigation. Lint remains **0 errors, 12 existing warnings**. Authenticated Firestore access and console Spark status are unverified. See [Milestone 9A verification](docs/milestone-9a-verification.md).
+
 Milestone 8: **28/28 local tests**, **46 API 37 emulator tests passed, 2 opt-in tests skipped**, build passed; lint **0 errors, 12 pre-existing warnings** and no new receipt warnings. The receipt force-stop/relaunch test passed separately, checking restored identity, metadata and image SHA-256. Real camera permission denial/capture, light/dark, landscape and 1.3× text were checked on the emulator. Evidence and limitations are in [Milestone 8 verification](docs/milestone-8-verification.md). Earlier reports remain historical evidence. API 24 and physical-device coverage remain pending.
 
 ## Settlements and UPI (Milestone 6)
@@ -183,14 +185,28 @@ Photos are normalized for all EXIF orientations, resized without changing aspect
 
 ReceiptStorageRepository exchanges logical UUID metadata and encoded byte payloads, never filesystem paths. The local adapter uses app-private no-backup files. Drafts are creator-private and require current membership; published historical receipts remain accessible to current group members. Every read/write checks permissions. ExpenseRepository’s ReceiptChange overload atomically saves expenses/splits and attachment links; an ordinary save keeps the current receipt. Replacement failure preserves the old attachment and retryable new draft. Removal/deletion commits metadata first and then cleans obsolete files. Startup/explicit cleanup removes unreferenced objects and drafts older than 24 hours; capture cache has the same expiry. Failed orphan deletion is safely retried on later writes/startup. Missing/corrupt files show a recoverable error rather than a broken image.
 
-### Future Firebase Storage adapter contract
+### Future receipt adapter contract (not approved for cloud deployment)
 
 Replace the local storage adapter and expense unit of work while keeping logical IDs, metadata, byte payloads and callbacks. A future adapter must stage an immutable object before a Firestore transaction publishes its expense link; a failed transaction retains a retryable draft or compensates by deleting the unpublished object. Never delete the previous object before the new metadata commit. Removed/replaced/deleted objects need idempotent deferred cleanup and an expiry job for abandoned uploads; a database and object store do not share one transaction. Define metadata states/version checks to handle interrupted uploads and concurrent edits.
 
-Both Firestore metadata rules and Cloud Storage object access must verify current group membership from authoritative membership records, with unpublished objects limited to their creator and no public download URLs. Rules must enforce group/expense identity, allowed image type/size and immutable logical references. Client checks are insufficient. Fresh Firebase accounts, groups and storage objects will be created later; local UUIDs, credentials, metadata and images are **not migrated**. No Firebase SDK, upload, rules deployment or cloud data migration is included now.
+Both Firestore metadata rules and Cloud Storage object access must verify current group membership from authoritative membership records, with unpublished objects limited to their creator and no public download URLs. Rules must enforce group/expense identity, allowed image type/size and immutable logical references. Client checks are insufficient. This is historical adapter design, not authorization to enable Cloud Storage. Current Spark/no-billing restrictions prohibit adding that SDK/service. Keep local receipt storage until a compatible no-billing alternative is explicitly approved. Future cloud accounts/data will start fresh; local UUIDs, credentials, metadata and images are **not migrated**. M9A adds only Auth/Firestore SDK foundation, with no upload, rules deployment or cloud migration.
 
 Current evidence: [Milestone 8 verification](docs/milestone-8-verification.md). Earlier milestone verification remains historical evidence.
 
+## Firebase foundation (Milestone 9A)
+
+Supply the real `app/google-services.json` downloaded for the existing Spark project, with an Android client for `com.example.splitease`. It is ignored by Git and must be provided locally/through secure CI configuration; builds intentionally fail if it is absent or no matching package exists. Do not generate placeholder configuration. The supplied file was verified for project `splitease-9acc8`; API keys are not printed in diagnostics or documentation.
+
+Google Services **4.5.0** processes configuration into resources; Firebase BoM **35.1.0** pins Authentication **25.0.0** and Firestore **27.1.0**. Existing AGP/Gradle, Java 17, minSdk 24, SDK 37, XML and ViewBinding are preserved. FirebaseInitProvider initializes the default FirebaseApp from generated resources before Application.onCreate. No second initialization path is needed. SplitEaseApplication still constructs LocalAuthService and the same app-scoped SqliteRepositories. No local database/session reset, migration or cloud synchronization occurs; schema remains 5.
+
+In debug builds, Profile → **Firebase setup · debug only** → **Check Firebase setup** verifies local options/SDK instances and sends one unauthenticated HTTPS HEAD to `https://firestore.googleapis.com/`. No project ID, API key, local identity, credentials or document paths are transmitted by the probe. Any HTTP response demonstrates DNS/TLS/host reachability; it does **not** prove a Firestore database exists, providers are enabled, security rules authorize access, or the project is on Spark. Local accounts remain the active identity. The probe is manual, runs off the UI thread with timeouts, and its executor/observers follow the view lifecycle. Release builds contain a no-op hook with no diagnostic UI/probe.
+
+**Cost boundary:** Spark only. No billing account, payment method, Blaze upgrade, Cloud Storage, Functions, Analytics, collection creation, rules deployment, Firestore query/write, Firebase sign-in or account creation is performed. A config file cannot prove the current plan: the owner must confirm Spark in the Firebase console before any later cloud feature activation. No billing/plan setting was changed. [Firebase pricing](https://firebase.google.com/pricing) distinguishes Spark from paid-plan allowances; do not enable billing to resolve a limitation.
+
+Future adapters belong behind AuthService and the existing asynchronous repository contracts; choose them only in the composition root when a later milestone authorizes replacement. Keep SDK types, documents and queries out of UI/domain/contracts, explicitly design Firebase UID mapping to canonical domain UUIDs, retain member-checked authorization and transactional accounting, and use fresh Firebase accounts/data with no local migration. ReceiptStorageRepository remains unchanged and local. No adapters or cloud feature flows are implemented in 9A.
+
+Evidence, exact checks and limits: [Milestone 9A verification](docs/milestone-9a-verification.md). Official setup/version references: [Android setup](https://firebase.google.com/docs/android/setup), [release notes](https://firebase.google.com/support/release-notes/android).
+
 ## Remaining scope
 
-API 24/physical-device coverage and exhaustive accessibility/device testing remain future checks. Receipt OCR is implemented locally; Firebase is not implemented. Firebase Auth/Firestore will use fresh accounts/data. No work beyond Milestone 8 is included. See AGENTS.md for architecture rules.
+API 24/physical-device coverage and exhaustive accessibility/device testing remain future checks. Receipt OCR remains local. Firebase SDK foundation is present; authentication replacement and Firestore repositories remain future work using fresh accounts/data. No work beyond Milestone 9A is included. See AGENTS.md for architecture rules.
