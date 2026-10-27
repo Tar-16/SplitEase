@@ -104,3 +104,18 @@
 - Keep capture/OCR/file IO off the UI thread in platform/data services. Close Fragment bindings, keep drafts session-bound, suppress late/cancelled work and preserve camera activity-result recreation. Keep manual entry available on permission, camera, recognition or storage failures.
 - Firebase Storage is future scope: maintain the same logical-ID/byte-payload contract, stage uploads before a member-checked Firestore link transaction, and use compensating deletion plus orphan cleanup. Storage and Firestore must both enforce current membership; no client-only authorization. Fresh Firebase accounts/data only; no local receipt/account migration or uploads are implemented.
 - Record M8 evidence and remaining device coverage in docs/milestone-8-verification.md. Stop after M8.
+## Firebase Spark plan and zero-cost restrictions
+
+- SplitEase must remain entirely on Firebase's **Spark (no-cost) plan**.
+- The project must never require payment, a billing account, or a credit/debit card.
+- Never enable Blaze, pay-as-you-go billing, or Google Cloud billing.
+- Never automatically upgrade the Firebase project or suggest enabling billing to solve an implementation problem.
+- Use Firebase Authentication with email/password and Cloud Firestore only within the Spark plan's no-cost quotas.
+- Optimize Firestore queries, listeners, writes, and document structures to minimize quota consumption.
+- Do not add Firebase Cloud Storage, Cloud Functions, or any Firebase/Google Cloud feature that requires billing.
+- Do not assume a product is available on Spark merely because its pricing page mentions a free allowance.
+- Keep receipt attachment storage provider-independent. Preserve working local receipt storage until a compatible no-billing cloud alternative is approved.
+- Do not add third-party cloud services without first verifying their no-cost availability and receiving explicit approval.
+- If a feature cannot be implemented without billing, report the limitation and propose a zero-cost alternative.
+- Prefer temporary feature limitations over introducing any possibility of cloud charges.
+- Never change these financial restrictions without explicit user approval.
