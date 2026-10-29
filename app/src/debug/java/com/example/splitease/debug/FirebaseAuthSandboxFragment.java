@@ -22,6 +22,7 @@ public final class FirebaseAuthSandboxFragment extends Fragment {
     @Override public void onViewCreated(@NonNull View view,Bundle state){
         if(state!=null)signup=state.getBoolean("signup",true);
         model=new ViewModelProvider(this,new ViewModelProvider.Factory(){@NonNull @Override public <T extends ViewModel>T create(@NonNull Class<T> type){return type.cast(new AuthViewModel(requireActivity().getApplication(),FirebaseAuthSandbox.service(requireContext())));}}).get(AuthViewModel.class);
+        root.cloudGroupsOpen.setOnClickListener(v->NavHostFragment.findNavController(this).navigate(R.id.firebase_cloud_groups));
         root.back.setOnClickListener(v->NavHostFragment.findNavController(this).popBackStack());
         root.restoreRetry.setOnClickListener(v->model.retryRestore());
         binding.heading.setText(R.string.cloud_sandbox_title);binding.subtitle.setText(R.string.cloud_sandbox_note);binding.localNote.setText(R.string.cloud_sandbox_note);
@@ -53,6 +54,7 @@ public final class FirebaseAuthSandboxFragment extends Fragment {
         checklist();model.retryRestore();
     }
     private void render(){
+        root.cloudGroupsOpen.setVisibility(signedIn?View.VISIBLE:View.GONE);root.cloudGroupsOpen.setEnabled(ready&&!model.busy());
         boolean enabled=ready&&!model.busy();binding.submit.setEnabled(enabled);binding.switchScreen.setEnabled(enabled);reset.setEnabled(enabled);
         binding.submit.setText(signedIn||unavailable?R.string.logout_action:pending?R.string.cloud_complete_profile:signup?R.string.signup_action:R.string.login_action);
         binding.switchScreen.setText(signup?R.string.to_login:R.string.to_signup);binding.switchScreen.setVisibility(signedIn||unavailable||pending?View.GONE:View.VISIBLE);

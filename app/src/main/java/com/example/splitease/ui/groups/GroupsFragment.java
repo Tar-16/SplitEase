@@ -35,8 +35,9 @@ public final class GroupsFragment extends GroupScreenFragment {
                 for(MemberIdentity member:detail.members) if(!member.username.isEmpty()) initials.add(member.username.substring(0,member.username.offsetByCodePoints(0,1)).toUpperCase(Locale.ROOT));
                 row.initials.setText(getString(R.string.member_initials,initials.toString()));
                 row.created.setText(getString(R.string.group_created,DateFormat.getDateInstance(DateFormat.MEDIUM).format(new Date(detail.group.createdAt))));
-                row.total.setText(getString(R.string.expense_total,InrFormatter.format(detail.totalExpenses)));
-                row.balance.setText(getString(R.string.expense_your_balance,ExpenseUi.balance(requireContext(),detail.balances.getOrDefault(state.actorId,0L),true)));
+                row.total.setVisibility(detail.accountingAvailable?View.VISIBLE:View.GONE);row.balance.setVisibility(detail.accountingAvailable?View.VISIBLE:View.GONE);
+                if(detail.accountingAvailable)row.total.setText(getString(R.string.expense_total,InrFormatter.format(detail.totalExpenses)));
+                if(detail.accountingAvailable)row.balance.setText(getString(R.string.expense_your_balance,ExpenseUi.balance(requireContext(),detail.balances.getOrDefault(state.actorId,0L),true)));
                 row.recent.setVisibility(detail.expenses.isEmpty()?View.GONE:View.VISIBLE);
                 if(!detail.expenses.isEmpty()) row.recent.setText(getString(R.string.expense_latest,ExpenseUi.date(detail.expenses.get(detail.expenses.size()-1).expenseDate)));
                 row.open.setContentDescription(getString(R.string.group_open_named,detail.group.name));

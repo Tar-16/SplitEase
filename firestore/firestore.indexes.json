@@ -1,0 +1,6 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "groups", "fieldPath": "members", "indexes": [] }
+  ]
+}

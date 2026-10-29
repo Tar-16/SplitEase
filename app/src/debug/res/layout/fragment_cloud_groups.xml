@@ -1,0 +1,5 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+    <com.google.android.material.button.MaterialButton android:id="@+id/cloud_back" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginHorizontal="24dp" android:text="@string/cloud_groups_exit"/>
+    <TextView android:id="@+id/cloud_gate" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="24dp" android:text="@string/restoring_session" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
+    <androidx.fragment.app.FragmentContainerView android:id="@+id/cloud_group_host" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"/>
+</LinearLayout>

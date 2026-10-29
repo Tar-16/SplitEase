@@ -45,6 +45,7 @@ public class FirestoreProfilesEmulatorTest {
   CloudProfile retry=create(a,"DifferentName");assertEquals(p.normalizedUsername,retry.normalizedUsername);assertFalse(task(a.db.collection("usernames").document("differentname").get(Source.SERVER)).exists());
   MemberIdentity found=await((RepositoryCallback<MemberIdentity> cb)->b.profiles.findByUsername(" PRIYA_ONE ",callbacks,cb));assertEquals(p.uid,found.id);assertEquals(p.displayUsername,found.username);
   DocumentSnapshot publicData=task(b.db.collection("usernames").document("priya_one").get(Source.SERVER));assertEquals(new HashSet<>(Arrays.asList("uid","displayUsername")),publicData.getData().keySet());
+  DocumentSnapshot uidData=task(b.db.collection("publicIdentities").document(p.uid).get(Source.SERVER));assertEquals(new HashSet<>(Arrays.asList("uid","normalizedUsername","displayUsername")),uidData.getData().keySet());
   FirestoreProfileRepository reopened=new FirestoreProfileRepository(a.db,a.auth);assertEquals(p.uid,await((RepositoryCallback<CloudProfile> cb)->reopened.getOwnProfile(callbacks,cb)).uid);
  }
  @Test public void concurrentReservationsHaveExactlyOneWinner()throws Exception{
@@ -59,6 +60,7 @@ public class FirestoreProfilesEmulatorTest {
   CloudProfile p=create(a,"Owner_A");create(b,"Owner_B");
   denied(b.db.collection("profiles").document(p.uid).get(Source.SERVER));denied(b.db.collection("profiles").document(p.uid).update("upiId","stolen@upi","updatedAt",FieldValue.serverTimestamp()));
   denied(guest.db.collection("usernames").document("owner_a").get(Source.SERVER));denied(guest.db.collection("profiles").document(p.uid).get(Source.SERVER));
+  denied(guest.db.collection("publicIdentities").document(p.uid).get(Source.SERVER));denied(a.db.collection("publicIdentities").get(Source.SERVER));denied(b.db.collection("publicIdentities").document(p.uid).update("displayUsername","Hijack"));
   denied(a.db.collection("profiles").get(Source.SERVER));denied(a.db.collection("usernames").get(Source.SERVER));denied(a.db.collection("groups").document("forbidden").set(Collections.singletonMap("name","test")));
   denied(b.db.collection("usernames").document("owner_a").set(registry(b.auth.getUid(),"Owner_A")));
   denied(own(a).delete());denied(a.db.collection("usernames").document("owner_a").delete());

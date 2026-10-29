@@ -32,6 +32,7 @@ public final class GroupsViewModel extends AndroidViewModel {
     private final AuthService auth;
     private final GroupRepository repository;
     private final SavedStateHandle saved;
+    private final boolean cloud;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Executor main=handler::post;
     private final MutableLiveData<State> state=new MutableLiveData<>();
@@ -44,9 +45,10 @@ public final class GroupsViewModel extends AndroidViewModel {
     private boolean loading=true, busy, searching, left;
     private int error, epoch, searchVersion;
     public GroupsViewModel(Application application, SavedStateHandle saved) {
-        super(application); this.saved=saved;
-        SplitEaseApplication app=(SplitEaseApplication)application;
-        auth=app.auth(); repository=app.groups(); publish();
+        this(application,saved,((SplitEaseApplication)application).auth(),((SplitEaseApplication)application).groups(),false);
+    }
+    public GroupsViewModel(Application application,SavedStateHandle saved,AuthService auth,GroupRepository repository,boolean cloud){
+        super(application);this.saved=saved;this.auth=auth;this.repository=repository;this.cloud=cloud;publish();
     }
     public LiveData<State> state() { return state; }
     public void configure(String mode,String groupId) { this.mode=mode; this.groupId=groupId; }
@@ -59,7 +61,7 @@ public final class GroupsViewModel extends AndroidViewModel {
         if (sessionSubscription!=null) return;
         sessionSubscription=auth.sessions().subscribe(main,new ObservableQuery.Observer<SessionState>() {
             @Override public void onChanged(SessionState value) {
-                String id=value.status==SessionState.Status.SIGNED_IN ? value.user.id : null;
+                String id=value.status==SessionState.Status.SIGNED_IN && value.backend==(cloud?SessionState.Backend.FIREBASE:SessionState.Backend.LOCAL) ? value.user.id : null;
                 if (!Objects.equals(actorId,id)) {
                     epoch++; searchVersion++; busy=false; searching=false; found=null;
                     groups=Collections.emptyList(); detail=null; createdId=null; left=false; selected.clear();
@@ -75,7 +77,7 @@ public final class GroupsViewModel extends AndroidViewModel {
                 }
                 subscribeData();
             }
-            @Override public void onError(Exception failure) { error=R.string.group_load_error; loading=false; publish(); }
+            @Override public void onError(Exception failure) { error=message(failure,R.string.group_load_error); loading=false; publish(); }
         });
     }
     public void stop() {
@@ -91,11 +93,11 @@ public final class GroupsViewModel extends AndroidViewModel {
         int token=epoch;
         if(mode.equals("home")) dataSubscription=repository.observeGroupSummaries(actorId).subscribe(main,new ObservableQuery.Observer<List<GroupDetails>>() {
             @Override public void onChanged(List<GroupDetails> value) { if(token==epoch) { groups=value; loading=false; error=0; publish(); } }
-            @Override public void onError(Exception failure) { if(token==epoch) { groups=Collections.emptyList(); loading=false; error=R.string.group_load_error; publish(); } }
+            @Override public void onError(Exception failure) { if(token==epoch) { groups=Collections.emptyList(); loading=false; error=message(failure,R.string.group_load_error); publish(); } }
         });
         else dataSubscription=repository.observeGroupDetails(actorId,groupId).subscribe(main,new ObservableQuery.Observer<GroupDetails>() {
             @Override public void onChanged(GroupDetails value) { if(token==epoch) { detail=value; loading=false; error=0; publish(); } }
-            @Override public void onError(Exception failure) { if(token==epoch) { detail=null; loading=false; if(!busy) error=R.string.group_unavailable; publish(); } }
+            @Override public void onError(Exception failure) { if(token==epoch) { detail=null; loading=false; if(!busy) error=message(failure,R.string.group_unavailable); publish(); } }
         });
     }
     public void search(String username) {
@@ -114,13 +116,13 @@ public final class GroupsViewModel extends AndroidViewModel {
             }
             @Override public void onError(Exception failure) {
                 if(token!=epoch || request!=searchVersion) return;
-                searching=false; error= failure instanceof NoSuchElementException ? R.string.member_not_found : R.string.group_search_error; publish();
+                searching=false; error= failure instanceof NoSuchElementException ? R.string.member_not_found : message(failure,R.string.group_search_error); publish();
             }
         });
     }
     public void selectFound() {
         if(found==null || busy || actorId==null) return;
-        if(mode.equals("create")) { selected.add(found); found=null; saveSelection(); publish(); }
+        if(mode.equals("create")) { if(cloud&&selected.size()+1>=com.example.splitease.domain.CloudGroupValidation.MAX_INITIAL_MEMBERS){error=R.string.cloud_initial_member_limit;publish();return;} selected.add(found); found=null; saveSelection(); publish(); }
         else if(detail!=null && actorId.equals(detail.group.adminId)) {
             String id=found.id; begin(); repository.addMember(actorId,groupId,id,System.currentTimeMillis(),main,callback(false));
         }
@@ -140,7 +142,7 @@ public final class GroupsViewModel extends AndroidViewModel {
         int token=epoch; begin();
         repository.createGroup(actorId,group,ids,main,new RepositoryCallback<Group>() {
             @Override public void onSuccess(Group value) { if(token==epoch) { busy=false; createdId=value.id; publish(); } }
-            @Override public void onError(Exception failure) { if(token==epoch) { busy=false; error=R.string.group_save_error; publish(); } }
+            @Override public void onError(Exception failure) { if(token==epoch) { busy=false; error=message(failure,R.string.group_save_error); publish(); } }
         });
     }
     public void transfer(String memberId) {
@@ -157,8 +159,11 @@ public final class GroupsViewModel extends AndroidViewModel {
         int token=epoch;
         return new RepositoryCallback<Boolean>() {
             @Override public void onSuccess(Boolean value) { if(token==epoch) { busy=false; found=null; left=leaving; publish(); } }
-            @Override public void onError(Exception failure) { if(token==epoch) { busy=false; error=R.string.group_save_error; publish(); } }
+            @Override public void onError(Exception failure) { if(token==epoch) { busy=false; error=message(failure,R.string.group_save_error); publish(); } }
         };
+    }
+    private int message(Exception failure,int fallback){
+        if(failure instanceof CloudGroupException){switch(((CloudGroupException)failure).code){case UNAVAILABLE:return R.string.cloud_group_offline;case FORBIDDEN:return R.string.group_unavailable;case UNSUPPORTED:return R.string.cloud_leaving_unavailable;case INVALID:return R.string.cloud_group_invalid;case DUPLICATE:return R.string.member_already_added;default:break;}}return fallback;
     }
     public void consumeNavigation() { createdId=null; left=false; }
     @Override protected void onCleared() { stop(); epoch++; }

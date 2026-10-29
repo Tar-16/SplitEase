@@ -50,8 +50,9 @@ public final class GroupDetailFragment extends GroupScreenFragment {
             if(state.detail!=null) {
                 GroupDetails detail=state.detail; boolean admin=detail.group.adminId.equals(state.actorId);
                 binding.title.setText(detail.group.name);
-                binding.total.setText(getString(R.string.expense_total,InrFormatter.format(detail.totalExpenses)));
-                binding.yourBalance.setText(getString(R.string.expense_your_balance,ExpenseUi.balance(requireContext(),detail.balances.getOrDefault(state.actorId,0L),true)));
+                binding.total.setVisibility(detail.accountingAvailable?View.VISIBLE:View.GONE);binding.yourBalance.setVisibility(detail.accountingAvailable?View.VISIBLE:View.GONE);
+                if(detail.accountingAvailable)binding.total.setText(getString(R.string.expense_total,InrFormatter.format(detail.totalExpenses)));
+                if(detail.accountingAvailable)binding.yourBalance.setText(getString(R.string.expense_your_balance,ExpenseUi.balance(requireContext(),detail.balances.getOrDefault(state.actorId,0L),true)));
                 renderAccounting(detail,state.actorId);
                 binding.meta.setText(getResources().getQuantityString(R.plurals.group_meta,detail.members.size(),getString(detail.group.type==Group.Type.FLAT?R.string.type_flat:R.string.type_trip),detail.members.size()));
                 binding.memberSearch.getRoot().setVisibility(admin?View.VISIBLE:View.GONE);
@@ -68,7 +69,7 @@ public final class GroupDetailFragment extends GroupScreenFragment {
                     binding.members.addView(row.getRoot());
                 }
                 binding.leave.setEnabled(detail.canLeave && !state.busy);
-                binding.leaveReason.setText(admin ? R.string.group_leave_admin : R.string.group_leave_balance);
+                binding.leaveReason.setText(!detail.accountingAvailable?R.string.cloud_leaving_unavailable:admin?R.string.group_leave_admin:R.string.group_leave_balance);
             } else { binding.title.setText(R.string.tab_groups); binding.meta.setText(""); }
             showTab();
             if(state.left && isResumed()) { model.consumeNavigation(); back(); }
@@ -79,7 +80,7 @@ public final class GroupDetailFragment extends GroupScreenFragment {
         binding.expensesPanel.setVisibility(selectedTab==1?View.VISIBLE:View.GONE);
         binding.balancesPanel.setVisibility(selectedTab==2?View.VISIBLE:View.GONE);
         GroupsViewModel.State state=model.state().getValue();
-        binding.addExpense.setVisibility(selectedTab==1 && state!=null && state.detail!=null?View.VISIBLE:View.GONE);
+        binding.addExpense.setVisibility(selectedTab==1 && state!=null && state.detail!=null && state.detail.accountingAvailable?View.VISIBLE:View.GONE);
     }
     private void openExpense(String id) {
         Bundle args=new Bundle(); args.putString("groupId",requireArguments().getString("groupId")); args.putString("expenseId",id);
@@ -87,6 +88,10 @@ public final class GroupDetailFragment extends GroupScreenFragment {
     }
     private void renderAccounting(GroupDetails detail,String actor) {
         binding.expenseList.removeAllViews(); binding.balanceList.removeAllViews();
+        binding.settleUp.setVisibility(detail.accountingAvailable?View.VISIBLE:View.GONE);
+        binding.balanceExplanation.setText(detail.accountingAvailable?R.string.balance_explanation:R.string.cloud_accounting_unavailable);
+        binding.expensesEmpty.setText(detail.accountingAvailable?R.string.expenses_empty:R.string.cloud_accounting_unavailable);
+        if(!detail.accountingAvailable){binding.expensesEmpty.setVisibility(View.VISIBLE);return;}
         binding.expensesEmpty.setVisibility(detail.expenses.isEmpty()?View.VISIBLE:View.GONE);
         String previous=null;
         List<Expense> newest=new ArrayList<>(detail.expenses); Collections.reverse(newest);

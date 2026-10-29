@@ -42,7 +42,8 @@ public final class FirebaseAuthSandbox {
         if(graph.findNode(R.id.firebase_auth_sandbox)!=null)return;
         FragmentNavigator navigator=navigation.getNavigatorProvider().getNavigator(FragmentNavigator.class);
         FragmentNavigator.Destination destination=navigator.createDestination();destination.setId(R.id.firebase_auth_sandbox);destination.setClassName(FirebaseAuthSandboxFragment.class.getName());graph.addDestination(destination);
+        FragmentNavigator.Destination groups=navigator.createDestination();groups.setId(R.id.firebase_cloud_groups);groups.setClassName(CloudGroupsFragment.class.getName());graph.addDestination(groups);
     }
-    public static boolean acceptsDestination(int id){return id==R.id.firebase_auth_sandbox;}
+    public static boolean acceptsDestination(int id){return id==R.id.firebase_auth_sandbox||id==R.id.firebase_cloud_groups;}
     public static void attach(ViewGroup parent,NavController navigation){ViewOpenAuthSandboxBinding binding=ViewOpenAuthSandboxBinding.inflate(LayoutInflater.from(parent.getContext()),parent,true);binding.openAuthSandbox.setOnClickListener(v->navigation.navigate(R.id.firebase_auth_sandbox));}
 }

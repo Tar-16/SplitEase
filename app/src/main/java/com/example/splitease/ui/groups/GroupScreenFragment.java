@@ -18,7 +18,11 @@ abstract class GroupScreenFragment extends Fragment {
     protected GroupsViewModel model;
     private AlertDialog confirmation;
     protected void setup(String mode,String id,TextView title) {
-        model=new ViewModelProvider(this).get(GroupsViewModel.class);
+        GroupDependencies cloud=com.example.splitease.debug.CloudGroups.dependencies(this);
+        if(cloud==null)model=new ViewModelProvider(this).get(GroupsViewModel.class);
+        else model=new ViewModelProvider(this,new androidx.lifecycle.AbstractSavedStateViewModelFactory(this,getArguments()){
+            @Override protected <T extends androidx.lifecycle.ViewModel>T create(String key,Class<T> type,androidx.lifecycle.SavedStateHandle handle){return type.cast(new GroupsViewModel(requireActivity().getApplication(),handle,cloud.auth,cloud.groups,true));}
+        }).get(GroupsViewModel.class);
         model.configure(mode,id);
         ViewCompat.setAccessibilityHeading(title,true);
     }

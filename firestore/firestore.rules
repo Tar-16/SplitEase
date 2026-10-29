@@ -17,7 +17,9 @@ service cloud.firestore {
     }
     function pairedRegistry(p, uid) {
       let r = getAfter(/databases/$(database)/documents/usernames/$(p.normalizedUsername)).data;
-      return r.uid == uid && r.displayUsername == p.displayUsername;
+      let u = getAfter(/databases/$(database)/documents/publicIdentities/$(uid)).data;
+      return r.uid == uid && r.displayUsername == p.displayUsername
+        && u.uid == uid && u.normalizedUsername == p.normalizedUsername && u.displayUsername == p.displayUsername;
     }
     match /profiles/{uid} {
       allow get: if owner(uid);
@@ -40,6 +42,85 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.normalizedUsername == name
         && getAfter(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayUsername == request.resource.data.displayUsername;
       allow list, delete: if false;
+    }
+    match /publicIdentities/{uid} {
+      allow get: if signedIn();
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['uid','normalizedUsername','displayUsername'])
+        && request.resource.data.keys().hasOnly(['uid','normalizedUsername','displayUsername'])
+        && request.resource.data.uid == uid
+        && validName(request.resource.data.displayUsername,request.resource.data.normalizedUsername)
+        && getAfter(/databases/$(database)/documents/profiles/$(uid)).data.normalizedUsername == request.resource.data.normalizedUsername
+        && getAfter(/databases/$(database)/documents/profiles/$(uid)).data.displayUsername == request.resource.data.displayUsername;
+      allow list, delete: if false;
+    }
+    function groupShape(p) {
+      return p.keys().hasAll(['name','type','creatorId','adminId','createdAt','updatedAt','revision','memberIds','members'])
+        && p.keys().hasOnly(['name','type','creatorId','adminId','createdAt','updatedAt','revision','memberIds','members'])
+        && p.name is string && p.name.size() > 0 && p.name.size() <= 100 && p.name.matches('(?s).*[^ \t\r\n].*')
+        && p.type in ['FLAT','TRIP'] && p.creatorId is string && p.adminId is string
+        && p.createdAt is timestamp && p.updatedAt == request.time && p.revision is int
+        && p.memberIds is list && p.members is map && p.memberIds.size() > 0
+        && p.memberIds.toSet().size() == p.memberIds.size()
+        && p.members.keys().hasAll(p.memberIds) && p.adminId in p.memberIds;
+    }
+    function memberShape(m) {
+      return m is map && m.keys().hasAll(['username','status','joinedAt','leftAt'])
+        && m.keys().hasOnly(['username','status','joinedAt','leftAt'])
+        && m.username is string && m.status == 'ACTIVE' && m.joinedAt is timestamp
+        && (m.leftAt == null || m.leftAt is timestamp);
+    }
+    function registeredMember(uid,m) {
+      let identity = get(/databases/$(database)/documents/publicIdentities/$(uid)).data;
+      return uid is string && memberShape(m) && identity.uid == uid && identity.displayUsername == m.username;
+    }
+    function initialAt(p,i) {
+      let uid = p.memberIds[i];
+      let row = p.members[uid];
+      let identity = get(/databases/$(database)/documents/publicIdentities/$(uid)).data;
+      // Exact map equality validates keys/types/values without repeating a schema per initial row.
+      return uid is string && identity.uid == uid && row == {
+        'username':identity.displayUsername, 'status':'ACTIVE', 'joinedAt':request.time, 'leftAt':null
+      };
+    }
+    function initialMember(p,i) { return p.memberIds.size() <= i || initialAt(p,i); }
+    function createGroup(p) {
+      // Eight initial members keep per-write rule access below ten. Later adds validate one member.
+      return groupShape(p) && p.creatorId == request.auth.uid && p.adminId == request.auth.uid
+        && p.createdAt == request.time && p.revision == 1 && p.memberIds.size() <= 8
+        && p.members.size() == p.memberIds.size()
+        && initialMember(p,0) && initialMember(p,1) && initialMember(p,2) && initialMember(p,3)
+        && initialMember(p,4) && initialMember(p,5) && initialMember(p,6) && initialMember(p,7);
+    }
+    function validJoin(p,old,uid) {
+      return p.members.diff(old.members).affectedKeys() == [uid].toSet()
+        && registeredMember(uid,p.members[uid])
+        && ((!(uid in old.members) && p.members[uid].joinedAt == request.time && p.members[uid].leftAt == null)
+          || (uid in old.members && old.members[uid].status == 'LEFT'
+            && p.members[uid].joinedAt == old.members[uid].joinedAt && p.members[uid].leftAt == old.members[uid].leftAt));
+    }
+    function addOne(p,old) {
+      let added = p.memberIds.removeAll(old.memberIds);
+      return p.adminId == old.adminId && p.name == old.name && p.type == old.type
+        && added.size() == 1 && p.memberIds.size() == old.memberIds.size()+1
+        && p.memberIds.hasAll(old.memberIds) && validJoin(p,old,added[0]);
+    }
+    function modifyGroup(p,old) {
+      return groupShape(p) && p.creatorId == old.creatorId && p.createdAt == old.createdAt
+        && p.revision == old.revision+1
+        && ((p.members == old.members && p.memberIds == old.memberIds
+            && ((p.name == old.name && p.type == old.type && p.adminId in old.memberIds)
+              || (p.adminId == old.adminId)))
+          || addOne(p,old));
+      // No leave/remove/delete branch: cloud financial eligibility is unavailable until 9E.
+    }
+    match /groups/{groupId} {
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/groups/$(groupId)) || request.auth.uid in resource.data.memberIds);
+      allow list: if signedIn() && request.auth.uid in resource.data.memberIds;
+      allow create: if signedIn() && groupId.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}') && createGroup(request.resource.data);
+      allow update: if signedIn() && request.auth.uid == resource.data.adminId
+        && request.auth.uid in resource.data.memberIds && modifyGroup(request.resource.data,resource.data);
+      allow delete: if false;
     }
     match /{document=**} { allow read, write: if false; }
   }

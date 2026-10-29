@@ -29,6 +29,7 @@ public final class FirestoreProfileRepository implements CloudProfileRepository 
     private <T>void fail(Executor executor,RepositoryCallback<T> cb,AuthException.Code code){executor.execute(()->cb.onError(new AuthException(code)));}
     private <T>void deliver(String uid,RepositoryCallback<T> cb,T value){if(same(uid))cb.onSuccess(value);else cb.onError(new AuthException(CANCELLED));}
     private Map<String,Object> registry(String uid,String display){Map<String,Object> value=new HashMap<>();value.put("uid",uid);value.put("displayUsername",display);return value;}
+    private Map<String,Object> publicIdentity(String uid,String display,String normalized){Map<String,Object> value=registry(uid,display);value.put("normalizedUsername",normalized);return value;}
     private CloudProfile parse(DocumentSnapshot document)throws AuthException{
         if(!document.exists())throw new AuthException(PROFILE_REQUIRED);
         try{
@@ -55,11 +56,15 @@ public final class FirestoreProfileRepository implements CloudProfileRepository 
             if(!same(uid))throw new IllegalStateException(new AuthException(CANCELLED));
             DocumentSnapshot existing=transaction.get(profile);
             // Retry after ambiguous acknowledgement returns the already committed owner; never changes its username.
-            if(existing.exists())return null;
+            if(existing.exists()){
+                CloudProfile complete;try{complete=parse(existing);}catch(AuthException invalid){throw new IllegalStateException(invalid);}
+                DocumentReference directory=db.collection("publicIdentities").document(uid);DocumentSnapshot publicUser=transaction.get(directory);
+                if(!publicUser.exists()||!complete.displayUsername.equals(publicUser.getString("displayUsername"))||!complete.normalizedUsername.equals(publicUser.getString("normalizedUsername")))transaction.set(directory,publicIdentity(uid,complete.displayUsername,complete.normalizedUsername));return null;
+            }
             DocumentSnapshot reservation=transaction.get(registry);
             if(reservation.exists()&&!uid.equals(reservation.getString("uid")))throw new IllegalStateException(new AuthException(DUPLICATE_USERNAME));
             Map<String,Object> p=new HashMap<>();p.put("uid",uid);p.put("normalizedUsername",normalized);p.put("displayUsername",display);p.put("email",email);p.put("upiId",null);p.put("createdAt",FieldValue.serverTimestamp());p.put("updatedAt",FieldValue.serverTimestamp());
-            transaction.set(profile,p);transaction.set(registry,registry(uid,display));return null;
+            transaction.set(profile,p);transaction.set(registry,registry(uid,display));transaction.set(db.collection("publicIdentities").document(uid),publicIdentity(uid,display,normalized));return null;
         }).addOnCompleteListener(executor,task->{if(!same(uid)){cb.onError(new AuthException(CANCELLED));return;}if(task.isSuccessful())getOwnProfile(executor,cb);else {
             Exception original=task.getException();
             // Competing commits can be rejected by rules before a transaction retry. Confirm the
@@ -81,7 +86,7 @@ public final class FirestoreProfileRepository implements CloudProfileRepository 
             CloudProfile original;try{original=parse(transaction.get(profile));}catch(AuthException invalid){throw new IllegalStateException(invalid);}
             if(!original.normalizedUsername.equals(CloudProfileValidation.normalized(display)))throw new IllegalStateException(new AuthException(INVALID_USERNAME));
             transaction.update(profile,"displayUsername",display,"upiId",upi,"updatedAt",FieldValue.serverTimestamp());
-            transaction.set(db.collection("usernames").document(original.normalizedUsername),registry(uid,display));return null;
+            transaction.set(db.collection("usernames").document(original.normalizedUsername),registry(uid,display));transaction.set(db.collection("publicIdentities").document(uid),publicIdentity(uid,display,original.normalizedUsername));return null;
         }).addOnCompleteListener(executor,task->{if(!same(uid)){cb.onError(new AuthException(CANCELLED));return;}if(task.isSuccessful())getOwnProfile(executor,cb);else cb.onError(safe(task.getException()));});
     }
     @Override public void findByUsername(String username,Executor executor,RepositoryCallback<MemberIdentity> cb){

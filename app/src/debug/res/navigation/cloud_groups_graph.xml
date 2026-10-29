@@ -1,0 +1,5 @@
+<navigation xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/cloud_groups_graph" app:startDestination="@id/groups">
+    <fragment android:id="@id/groups" android:name="com.example.splitease.ui.groups.GroupsFragment" android:label="@string/cloud_groups_title"/>
+    <fragment android:id="@id/create_group" android:name="com.example.splitease.ui.groups.CreateGroupFragment" android:label="@string/create_group"/>
+    <fragment android:id="@id/group_detail" android:name="com.example.splitease.ui.groups.GroupDetailFragment" android:label="@string/cloud_groups_title"><argument android:name="groupId" app:argType="string"/></fragment>
+</navigation>

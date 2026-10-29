@@ -1,0 +1,7 @@
+<resources>
+    <string name="cloud_initial_member_limit">Create with up to 8 people including yourself. Add more members after creation.</string>
+    <string name="cloud_leaving_unavailable">Leaving cloud groups is unavailable until cloud balances can be checked in Milestone 9E. No balance is assumed to be zero.</string>
+    <string name="cloud_accounting_unavailable">Cloud expenses and balances are not available yet.</string>
+    <string name="cloud_group_offline">Cloud groups could not reach the server. Check your connection and tap Refresh to reconnect.</string>
+    <string name="cloud_group_invalid">Check the group name (1–100 characters) and selected registered members.</string>
+</resources>
