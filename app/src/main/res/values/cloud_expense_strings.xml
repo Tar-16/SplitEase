@@ -1,0 +1,4 @@
+<resources>
+ <string name="expense_description">Description (optional)</string>
+ <string name="cloud_expense_save_error">Expense could not be saved. Another member may have changed it. Refresh before retrying. Cloud expenses support up to 8 participants and ₹10 billion.</string>
+</resources>

@@ -14,6 +14,8 @@ import static com.example.splitease.repository.CloudGroupException.Code.*;
 /** One group document is an atomic membership ledger. No cloud accounting/zero-balance assumption. */
 public final class FirestoreGroupRepository implements GroupRepository,AutoCloseable {
     private final FirebaseFirestore db;
+    private ExpenseRepository expenses;
+    public void attachExpenses(ExpenseRepository expenses){this.expenses=expenses;}
     private final CloudProfileRepository profiles;
     private final com.google.firebase.auth.FirebaseAuth sdkAuth;
     private final ObservableQuery.Subscription sessionSubscription;
@@ -140,7 +142,20 @@ public final class FirestoreGroupRepository implements GroupRepository,AutoClose
         try{List<GroupDetails> result=new ArrayList<>();for(DocumentSnapshot doc:snapshot.getDocuments())result.add(details(doc,supplied));result.sort((a,b)->{int date=Long.compare(b.group.createdAt,a.group.createdAt);return date!=0?date:a.group.id.compareTo(b.group.id);});live.value(Collections.unmodifiableList(result));}catch(RuntimeException invalid){live.error(invalid);}
     })));}
     private <T>ObservableQuery<T> document(String supplied,String id,java.util.function.Function<DocumentSnapshot,T> parse){return observe(supplied,live->live.attach(group(id).addSnapshotListener(live.executor,MetadataChanges.INCLUDE,(snapshot,error)->{if(error!=null){live.error(error);return;}if(snapshot==null||!live.server(snapshot.getMetadata()))return;try{if(!ids(snapshot).contains(supplied))throw new SecurityException();live.value(parse.apply(snapshot));}catch(RuntimeException invalid){live.error(invalid);}})));}
-    @Override public ObservableQuery<GroupDetails> observeGroupDetails(String actor,String id){return document(actor,id,doc->details(doc,actor));}
+    @Override public ObservableQuery<GroupDetails> observeGroupDetails(String actor,String id){
+        ObservableQuery<GroupDetails> source=document(actor,id,doc->details(doc,actor));
+        if(expenses==null)return source;
+        return (executor,observer)->{
+            final GroupDetails[] group={null};final List<Expense>[] rows=new List[]{null};
+            AtomicBoolean active=new AtomicBoolean(true);ObservableQuery.Subscription[] subscriptions=new ObservableQuery.Subscription[2];
+            Runnable emit=()->{if(active.get()&&group[0]!=null&&rows[0]!=null){GroupDetails g=group[0];observer.onChanged(new GroupDetails(g.group,g.members,false,rows[0],Collections.emptyMap(),g.names,0,false,true));}};
+            java.util.function.Consumer<Exception> fail=error->{if(active.compareAndSet(true,false)){for(ObservableQuery.Subscription sub:subscriptions)if(sub!=null)sub.close();observer.onError(error);}};
+            subscriptions[0]=source.subscribe(executor,new ObservableQuery.Observer<GroupDetails>(){public void onChanged(GroupDetails value){group[0]=value;emit.run();}public void onError(Exception error){fail.accept(error);}});
+            if(active.get())subscriptions[1]=expenses.observeExpenses(id).subscribe(executor,new ObservableQuery.Observer<List<Expense>>(){public void onChanged(List<Expense> value){rows[0]=value;emit.run();}public void onError(Exception error){fail.accept(error);}});
+            if(!active.get())for(ObservableQuery.Subscription sub:subscriptions)if(sub!=null)sub.close();
+            return ()->{active.set(false);for(ObservableQuery.Subscription sub:subscriptions)if(sub!=null)sub.close();};
+        };
+    }
     private <A,B>ObservableQuery<B> map(ObservableQuery<A> source,java.util.function.Function<A,B> transform){return (executor,observer)->source.subscribe(executor,new ObservableQuery.Observer<A>(){public void onChanged(A value){observer.onChanged(transform.apply(value));}public void onError(Exception error){observer.onError(error);}});}
     @Override public ObservableQuery<List<Group>> observeGroups(String actor){return map(observeGroupSummaries(actor),values->{List<Group> result=new ArrayList<>();for(GroupDetails value:values)result.add(value.group);return Collections.unmodifiableList(result);});}
     @Override public ObservableQuery<List<GroupMember>> observeMembers(String id){String uid=actor();return document(uid,id,this::parseMembers);}

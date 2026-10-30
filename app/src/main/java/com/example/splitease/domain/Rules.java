@@ -27,6 +27,14 @@ public final class Rules {
         for (String participant : participants) {
             if (!ids.add(id(participant))) throw new IllegalArgumentException("Duplicate participant");
         }
+        return equalSplitIdentities(total, ids);
+    }
+    /** Same exact split algorithm for opaque cloud identities, sorted deterministically. */
+    public static Map<String,Long> equalSplitIdentities(long total, Collection<String> participants) {
+        positive(total);
+        if(participants==null || participants.isEmpty()) throw new IllegalArgumentException("Participants required");
+        TreeSet<String> ids=new TreeSet<>();
+        for(String id:participants) if(id==null || id.isEmpty() || !ids.add(id)) throw new IllegalArgumentException("Invalid participant");
         long base = total / ids.size(), remainder = total % ids.size();
         Map<String, Long> result = new LinkedHashMap<>();
         for (String participant : ids) result.put(participant, base + (remainder-- > 0 ? 1 : 0));

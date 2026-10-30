@@ -33,6 +33,7 @@ public final class ExpenseViewModel extends AndroidViewModel {
         State(ExpenseViewModel m) { group=m.group; expense=m.original; loading=m.loading; busy=m.busy||m.receiptWorking||!m.text("capture_id").isEmpty(); editing=m.editing(); done=m.done; error=m.error;
             receiptReliability=m.receiptDetection==null?null:m.receiptDetection.reliability;receiptEvidence=m.receiptDetection==null?null:m.receiptDetection.supportingLabel;receiptDebug=m.receiptDetection==null?null:m.receiptDetection.debugReport;receiptAmountApplied=m.receiptAmountApplied;receiptPreview=m.receiptPreview;receiptId=m.visibleReceiptId();detectedPaise=m.detectedPaise;receiptMessage=m.receiptMessage;captureUri=m.captureTarget;capturePending=!m.text("capture_id").isEmpty(); }
     }
+    private final boolean cloud;
     private final AuthService auth;
     private final GroupRepository groups;
     private final ExpenseRepository expenses;
@@ -58,9 +59,16 @@ public final class ExpenseViewModel extends AndroidViewModel {
     private boolean loading=true,busy,done;
     private int epoch,error,captureVersion;
     public ExpenseViewModel(Application application,SavedStateHandle saved) {
-        super(application); this.saved=saved;saved.remove("receipt_loaded_instance");
-        SplitEaseApplication app=(SplitEaseApplication)application; auth=app.auth(); groups=app.groups(); expenses=app.expenses();receipts=app.receipts();capture=app.receiptCapture();emit();
+        this(application,saved,null);
     }
+    public ExpenseViewModel(Application application,SavedStateHandle saved,com.example.splitease.ui.groups.GroupDependencies dependencies){
+        super(application);this.saved=saved;saved.remove("receipt_loaded_instance");cloud=dependencies!=null;
+        SplitEaseApplication app=(SplitEaseApplication)application;
+        auth=cloud?dependencies.auth:app.auth();groups=cloud?dependencies.groups:app.groups();expenses=cloud?dependencies.expenses:app.expenses();
+        receipts=cloud?null:app.receipts();capture=app.receiptCapture();emit();
+    }
+    public boolean cloud(){return cloud;}
+    private Map<String,Long> split(long amount,List<String> ids){return cloud?Rules.equalSplitIdentities(amount,ids):Rules.equalSplit(amount,ids);}
     public void configure(String groupId,String expenseId) { this.groupId=groupId; this.expenseId=expenseId; }
     public LiveData<State> state() { return state; }
     private void emit() { state.setValue(new State(this)); }
@@ -74,13 +82,13 @@ public final class ExpenseViewModel extends AndroidViewModel {
         List<String> values=selected(); if(include && !values.contains(id)) values.add(id); if(!include) values.remove(id);
         saved.set("participants",new ArrayList<>(values));
     }
-    public Map<String,Long> preview() { return Rules.equalSplit(ExpenseAmounts.parse(text("amount")),selected()); }
+    public Map<String,Long> preview() { return split(ExpenseAmounts.parse(text("amount")),selected()); }
     public void start() {
         if(sessionWatch!=null) return;
         sessionReady=false;
         sessionWatch=auth.sessions().subscribe(main,new ObservableQuery.Observer<SessionState>() {
             @Override public void onChanged(SessionState session) {
-                String id=session.status==SessionState.Status.SIGNED_IN?session.user.id:null;
+                String id=session.status==SessionState.Status.SIGNED_IN&&session.backend==(cloud?SessionState.Backend.FIREBASE:SessionState.Backend.LOCAL)?session.user.id:null;
                 if(!Objects.equals(id,actor)) {
                     boolean restoringOwner=actor==null&&id!=null&&id.equals(saved.get("owner"));
                     if(!restoringOwner){releaseReceiptDraft(actor);capture.cancel(text("capture_id"));}
@@ -99,6 +107,7 @@ public final class ExpenseViewModel extends AndroidViewModel {
         });
     }
     public void stop() { sessionReady=false;if(sessionWatch!=null) sessionWatch.close(); sessionWatch=null; if(groupWatch!=null) groupWatch.close(); groupWatch=null; }
+    public void refresh(){if(cloud){saved.set("initialized",false);saved.set("editing",false);}load();}
     public void load() {
         if(groupWatch!=null) groupWatch.close(); groupWatch=null;
         loading=actor!=null; error=0; emit(); if(actor==null) return;
@@ -111,6 +120,7 @@ public final class ExpenseViewModel extends AndroidViewModel {
                 if(expenseId!=null) for(Expense expense:value.expenses) if(expense.id.equals(expenseId)) original=expense;
                 if(expenseId!=null && original==null) { captureVersion++;capture.cancel(text("capture_id"));clearCapture();receiptWorking=false;receiptPreview=null;group=null; if(!busy && !done) error=R.string.expense_missing; emit(); return; }
                 if(!Boolean.TRUE.equals(saved.get("initialized")) || !editing()) {
+                    saved.set("revision",original==null?0L:original.revision);saved.set("description",original==null?"":original.description);
                     saved.set("title",original==null?"":original.title);
                     saved.set("amount",original==null?"":ExpenseAmounts.input(original.amountPaise));
                     saved.set("payer",original==null?actor:original.payerId);
@@ -141,6 +151,7 @@ public final class ExpenseViewModel extends AndroidViewModel {
     }
     public boolean current(String id) { if(group!=null) for(MemberIdentity member:group.members) if(member.id.equals(id)) return true; return false; }
     public void edit() { if(group!=null && original!=null && !busy) { saved.set("initialized",false); saved.set("editing",true); // Initialize from the latest snapshot, not a stale display draft.
+        saved.set("revision",original.revision);saved.set("description",original.description);
         saved.set("title",original.title); saved.set("amount",ExpenseAmounts.input(original.amountPaise)); saved.set("payer",original.payerId); saved.set("category",original.category); saved.set("date",original.expenseDate);
         ArrayList<String> ids=new ArrayList<>(); for(ExpenseSplit split:original.splits) ids.add(split.userId); saved.set("participants",ids); saved.set("initialized",true); emit(); } }
     public void save() {
@@ -150,11 +161,12 @@ public final class ExpenseViewModel extends AndroidViewModel {
             String title=Rules.text(text("title")); long amount=ExpenseAmounts.parse(text("amount"));
             if(!CATEGORIES.contains(text("category")) && (original==null || !original.category.equals(text("category")))) throw new IllegalArgumentException();
             if(!payerOptions().contains(text("payer")) || !participantOptions().containsAll(selected())) throw new IllegalArgumentException();
-            String id=original==null?UUID.randomUUID().toString():original.id;
+            String id=original==null?(cloud?text("draft_expense_id"):UUID.randomUUID().toString()):original.id;
+            if(id.isEmpty()){id=UUID.randomUUID().toString();saved.set("draft_expense_id",id);}
             List<ExpenseSplit> splits=new ArrayList<>();
-            for(Map.Entry<String,Long> share:Rules.equalSplit(amount,selected()).entrySet()) splits.add(new ExpenseSplit(id,share.getKey(),share.getValue()));
+            for(Map.Entry<String,Long> share:split(amount,selected()).entrySet()) splits.add(new ExpenseSplit(id,share.getKey(),share.getValue()));
             Rules.date(date());
-            value=new Expense(id,groupId,title,amount,text("payer"),original==null?actor:original.creatorId,text("category"),date(),splits);
+            value=new Expense(id,groupId,title,amount,text("payer"),original==null?actor:original.creatorId,text("category"),date(),splits,cloud?((Long)saved.get("revision")):0,cloud?text("description"):"");
         } catch(IllegalArgumentException | ArithmeticException failure) { error=R.string.expense_invalid; emit(); return; }
         int token=epoch; busy=true; error=0; emit();
         expenses.saveExpense(actor,value,receiptChange(),main,new RepositoryCallback<Expense>() {
@@ -162,23 +174,29 @@ public final class ExpenseViewModel extends AndroidViewModel {
             @Override public void onError(Exception failure) { failed(token); }
         });
     }
-    public void delete() {
-        if(actor==null || original==null || group==null || busy) return;
+    /** Capture when the confirmation opens, so a later live update cannot authorize a newer deletion. */
+    public Expense deletionTarget(){
+        if(original==null)return null;
+        return cloud?new Expense(original.id,original.groupId,original.title,original.amountPaise,original.payerId,original.creatorId,original.category,original.expenseDate,original.splits,((Long)saved.get("revision")),original.description):original;
+    }
+    public void delete() {delete(deletionTarget());}
+    public void delete(Expense expected) {
+        if(actor==null || original==null || expected==null || group==null || busy) return;
         int token=epoch; busy=true; error=0; emit();
-        expenses.deleteExpense(actor,original.id,main,new RepositoryCallback<Boolean>() {
+        expenses.deleteExpense(actor,cloud?expected:original,main,new RepositoryCallback<Boolean>() {
             @Override public void onSuccess(Boolean value) { if(token==epoch) { busy=false; done=true; emit(); } }
             @Override public void onError(Exception failure) { failed(token); }
         });
     }
-    private void failed(int token) { if(token==epoch) { busy=false; error=R.string.expense_save_error; emit(); } }
+    private void failed(int token) { if(token==epoch) { busy=false; error=cloud?R.string.cloud_expense_save_error:R.string.expense_save_error; emit(); } }
     public String visibleReceiptId() {
         if(Boolean.TRUE.equals(saved.get("receipt_remove")))return "";
         return !text("receipt_draft").isEmpty()?text("receipt_draft"):receiptMetadata==null?"":receiptMetadata.id;
     }
     private ReceiptChange receiptChange(){return Boolean.TRUE.equals(saved.get("receipt_remove"))?ReceiptChange.remove():text("receipt_draft").isEmpty()?ReceiptChange.keep():ReceiptChange.replace(text("receipt_draft"));}
-    private void releaseReceiptDraft(String owner){String id=text("receipt_draft");if(owner!=null&&!id.isEmpty())receipts.discardDraft(owner,id,main,new RepositoryCallback<Boolean>(){public void onSuccess(Boolean value){}public void onError(Exception failure){/* Startup TTL cleanup retries abandoned drafts. */}});}
+    private void releaseReceiptDraft(String owner){String id=text("receipt_draft");if(!cloud&&owner!=null&&!id.isEmpty())receipts.discardDraft(owner,id,main,new RepositoryCallback<Boolean>(){public void onSuccess(Boolean value){}public void onError(Exception failure){/* Startup TTL cleanup retries abandoned drafts. */}});}
     public void loadReceipt() {
-        if(actor==null||group==null||receiptWorking)return;
+        if(cloud||actor==null||group==null||receiptWorking)return;
         receiptCheckedExpense=expenseId;saved.set("receipt_loaded_instance",true);
         if(Boolean.TRUE.equals(saved.get("receipt_remove")))return;
         int token=epoch;String draft=text("receipt_draft");receiptWorking=true;emit();
@@ -200,7 +218,7 @@ public final class ExpenseViewModel extends AndroidViewModel {
     }
     private void receiptFailed(int token){if(token==epoch){receiptWorking=false;receiptPreview=null;receiptMessage=R.string.receipt_unavailable;emit();}}
     public void prepareCapture(){
-        if(!sessionReady||actor==null||group==null||busy||receiptWorking||!editing())return;
+        if(cloud||!sessionReady||actor==null||group==null||busy||receiptWorking||!editing())return;
         capture.cancel(text("capture_id"));clearCapture();
         int token=epoch,version=++captureVersion;receiptWorking=true;emit();
         capture.prepare(main,new RepositoryCallback<ReceiptCaptureService.Target>(){

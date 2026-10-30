@@ -9,5 +9,9 @@ public interface ExpenseRepository {
     void saveExpense(String actorId, Expense expense, ReceiptChange receiptChange, Executor executor, RepositoryCallback<Expense> callback);
     void saveExpense(String actorId, Expense expense, Executor executor, RepositoryCallback<Expense> callback);
     void deleteExpense(String actorId, String expenseId, Executor executor, RepositoryCallback<Boolean> callback);
+    /** Version-aware deletion; local adapters preserve their existing transactional behavior. */
+    default void deleteExpense(String actorId, Expense expected, Executor executor, RepositoryCallback<Boolean> callback) {
+        deleteExpense(actorId,expected.id,executor,callback);
+    }
     ObservableQuery<List<Expense>> observeExpenses(String groupId);
 }

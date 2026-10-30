@@ -37,16 +37,21 @@ public final class ExpenseFragment extends Fragment {
         binding=FragmentExpenseBinding.inflate(inflater,parent,false); return binding.getRoot();
     }
     @Override public void onViewCreated(@NonNull View view,Bundle saved) {
-        model=new ViewModelProvider(this).get(ExpenseViewModel.class);
+        com.example.splitease.ui.groups.GroupDependencies dependencies=com.example.splitease.debug.CloudGroups.dependencies(this);
+        if(dependencies==null)model=new ViewModelProvider(this).get(ExpenseViewModel.class);
+        else model=new ViewModelProvider(this,new androidx.lifecycle.AbstractSavedStateViewModelFactory(this,getArguments()){
+            @Override protected <T extends androidx.lifecycle.ViewModel>T create(String key,Class<T> type,androidx.lifecycle.SavedStateHandle handle){return type.cast(new ExpenseViewModel(requireActivity().getApplication(),handle,dependencies));}
+        }).get(ExpenseViewModel.class);
         model.configure(requireArguments().getString("groupId"),requireArguments().getString("expenseId"));
         ViewCompat.setAccessibilityHeading(binding.heading,true);ViewCompat.setAccessibilityHeading(binding.receiptHeading,true);binding.receiptMessage.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         binding.error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        binding.back.setOnClickListener(v -> back()); binding.retry.setOnClickListener(v -> model.load());
-        watch(binding.expenseTitle,"title"); watch(binding.expenseAmount,"amount");
+        binding.back.setOnClickListener(v -> back()); binding.retry.setOnClickListener(v -> model.refresh());
+        watch(binding.expenseDescription,"description");watch(binding.expenseTitle,"title"); watch(binding.expenseAmount,"amount");
         binding.save.setOnClickListener(v -> model.save()); binding.edit.setOnClickListener(v -> model.edit());
         binding.delete.setOnClickListener(v -> {
+            com.example.splitease.model.Expense expected=model.deletionTarget();
             confirmation=new MaterialAlertDialogBuilder(requireContext()).setMessage(R.string.expense_delete_confirm)
-                .setNegativeButton(R.string.group_cancel,null).setPositiveButton(R.string.expense_delete,(dialog,which) -> model.delete()).show();
+                .setNegativeButton(R.string.group_cancel,null).setPositiveButton(R.string.expense_delete,(dialog,which) -> model.delete(expected)).show();
         });
         binding.date.setOnClickListener(v -> {
             Calendar date=Calendar.getInstance(TimeZone.getTimeZone("UTC")); date.setTimeInMillis(model.date());
@@ -71,6 +76,8 @@ public final class ExpenseFragment extends Fragment {
             binding.form.setVisibility(state.group==null?View.GONE:View.VISIBLE);
             if(state.group!=null) {
                 boolean edit=state.editing && !state.busy;
+                binding.expenseDescriptionLayout.setVisibility(model.cloud()?View.VISIBLE:View.GONE);
+                setText(binding.expenseDescription,model.text("description"));binding.expenseDescription.setEnabled(edit);
                 binding.heading.setText(state.editing ? (state.expense==null?R.string.expense_add:R.string.expense_edit):R.string.expense_details);
                 setText(binding.expenseTitle,model.text("title")); setText(binding.expenseAmount,model.text("amount"));
                 binding.expenseTitle.setEnabled(edit); binding.expenseAmount.setEnabled(edit);
@@ -116,6 +123,7 @@ public final class ExpenseFragment extends Fragment {
                 binding.receiptCancelCapture.setVisibility(state.capturePending?View.VISIBLE:View.GONE);
                 preview();
             }
+            if(model.cloud())for(View receiptView:Arrays.asList(binding.receiptHeading,binding.receiptDetectedResult,binding.receiptMessage,binding.receiptDebugToggle,binding.receiptDebug,binding.receiptPreview,binding.scanReceipt,binding.receiptCameraSettings,binding.receiptCancelCapture,binding.receiptView,binding.receiptRemove,binding.receiptRetry))receiptView.setVisibility(View.GONE);
             rendering=false;launchCapture();
             if(state.done && isResumed()) { model.consumeDone(); back(); }
         });

@@ -2,4 +2,5 @@
     <fragment android:id="@id/groups" android:name="com.example.splitease.ui.groups.GroupsFragment" android:label="@string/cloud_groups_title"/>
     <fragment android:id="@id/create_group" android:name="com.example.splitease.ui.groups.CreateGroupFragment" android:label="@string/create_group"/>
     <fragment android:id="@id/group_detail" android:name="com.example.splitease.ui.groups.GroupDetailFragment" android:label="@string/cloud_groups_title"><argument android:name="groupId" app:argType="string"/></fragment>
+    <fragment android:id="@id/expense_screen" android:name="com.example.splitease.ui.expenses.ExpenseFragment" android:label="@string/expense_details"><argument android:name="groupId" app:argType="string"/><argument android:name="expenseId" app:argType="string" app:nullable="true" android:defaultValue="@null"/></fragment>
 </navigation>

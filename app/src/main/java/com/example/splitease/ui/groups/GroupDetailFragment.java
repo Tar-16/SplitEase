@@ -80,7 +80,7 @@ public final class GroupDetailFragment extends GroupScreenFragment {
         binding.expensesPanel.setVisibility(selectedTab==1?View.VISIBLE:View.GONE);
         binding.balancesPanel.setVisibility(selectedTab==2?View.VISIBLE:View.GONE);
         GroupsViewModel.State state=model.state().getValue();
-        binding.addExpense.setVisibility(selectedTab==1 && state!=null && state.detail!=null && state.detail.accountingAvailable?View.VISIBLE:View.GONE);
+        binding.addExpense.setVisibility(selectedTab==1 && state!=null && state.detail!=null && state.detail.expensesAvailable?View.VISIBLE:View.GONE);
     }
     private void openExpense(String id) {
         Bundle args=new Bundle(); args.putString("groupId",requireArguments().getString("groupId")); args.putString("expenseId",id);
@@ -90,8 +90,8 @@ public final class GroupDetailFragment extends GroupScreenFragment {
         binding.expenseList.removeAllViews(); binding.balanceList.removeAllViews();
         binding.settleUp.setVisibility(detail.accountingAvailable?View.VISIBLE:View.GONE);
         binding.balanceExplanation.setText(detail.accountingAvailable?R.string.balance_explanation:R.string.cloud_accounting_unavailable);
-        binding.expensesEmpty.setText(detail.accountingAvailable?R.string.expenses_empty:R.string.cloud_accounting_unavailable);
-        if(!detail.accountingAvailable){binding.expensesEmpty.setVisibility(View.VISIBLE);return;}
+        binding.expensesEmpty.setText(detail.expensesAvailable?R.string.expenses_empty:R.string.cloud_accounting_unavailable);
+        if(!detail.expensesAvailable){binding.expensesEmpty.setVisibility(View.VISIBLE);return;}
         binding.expensesEmpty.setVisibility(detail.expenses.isEmpty()?View.VISIBLE:View.GONE);
         String previous=null;
         List<Expense> newest=new ArrayList<>(detail.expenses); Collections.reverse(newest);
@@ -110,6 +110,7 @@ public final class GroupDetailFragment extends GroupScreenFragment {
             row.open.setContentDescription(getString(R.string.expense_open_named,expense.title));
             row.open.setOnClickListener(v -> openExpense(expense.id)); binding.expenseList.addView(row.getRoot());
         }
+        if(!detail.accountingAvailable)return;
         for(Map.Entry<String,String> identity:detail.names.entrySet()) {
             ItemMemberBinding row=ItemMemberBinding.inflate(getLayoutInflater(),binding.balanceList,false);
             row.name.setText(ExpenseUi.name(requireContext(),detail,identity.getKey()));

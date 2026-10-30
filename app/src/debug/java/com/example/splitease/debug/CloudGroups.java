@@ -13,7 +13,13 @@ public final class CloudGroups {
     private static GroupDependencies owner;
     private CloudGroups(){}
     public static synchronized GroupDependencies owner(Context context){
-        if(owner==null){com.example.splitease.auth.AuthService auth=FirebaseAuthSandbox.service(context);owner=new GroupDependencies(auth,new FirestoreGroupRepository(FirebaseFirestore.getInstance(FirebaseAuthSandbox.sdk(context).getApp()),auth,FirebaseAuthSandbox.profiles(context)));}return owner;
+        if(owner==null){
+            com.example.splitease.auth.AuthService auth=FirebaseAuthSandbox.service(context);
+            FirebaseFirestore db=FirebaseFirestore.getInstance(FirebaseAuthSandbox.sdk(context).getApp());
+            com.example.splitease.data.firebase.FirestoreExpenseRepository expenses=new com.example.splitease.data.firebase.FirestoreExpenseRepository(db,auth);
+            FirestoreGroupRepository groups=new FirestoreGroupRepository(db,auth,FirebaseAuthSandbox.profiles(context));groups.attachExpenses(expenses);
+            owner=new GroupDependencies(auth,groups,expenses);
+        }return owner;
     }
     public static GroupDependencies dependencies(Fragment fragment){return NavHostFragment.findNavController(fragment).getGraph().getId()==R.id.cloud_groups_graph?owner(fragment.requireContext()):null;}
 }

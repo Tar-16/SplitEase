@@ -13,6 +13,9 @@
             <com.google.android.material.textfield.TextInputLayout style="@style/Widget.SplitEase.Input" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp" android:hint="@string/expense_amount">
                 <com.google.android.material.textfield.TextInputEditText android:id="@+id/expense_amount" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="numberDecimal" android:saveEnabled="false" android:maxLines="1"/>
             </com.google.android.material.textfield.TextInputLayout>
+            <com.google.android.material.textfield.TextInputLayout android:id="@+id/expense_description_layout" style="@style/Widget.SplitEase.Input" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="@string/expense_description" android:visibility="gone">
+                <com.google.android.material.textfield.TextInputEditText android:id="@+id/expense_description" android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textCapSentences|textMultiLine" android:maxLength="2000" android:saveEnabled="false"/>
+            </com.google.android.material.textfield.TextInputLayout>
             <TextView android:id="@+id/payer_label" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_payer" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle"/>
             <Spinner android:id="@+id/payer" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp" android:saveEnabled="false"/>
             <TextView android:id="@+id/category_label" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_category" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle"/>

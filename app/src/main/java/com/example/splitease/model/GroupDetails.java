@@ -13,6 +13,7 @@ public final class GroupDetails {
     public final long totalExpenses;
     /** False means financial values are unavailable and must never be displayed/interpreted as zero. */
     public final boolean accountingAvailable;
+    public final boolean expensesAvailable;
 
     public GroupDetails(Group group, List<MemberIdentity> members, boolean canLeave,
             List<Expense> expenses, Map<String,Long> balances, Map<String,String> names, long totalExpenses) {
@@ -20,6 +21,10 @@ public final class GroupDetails {
     }
     public GroupDetails(Group group,List<MemberIdentity> members,boolean canLeave,List<Expense> expenses,
             Map<String,Long> balances,Map<String,String> names,long totalExpenses,boolean accountingAvailable){
+        this(group,members,canLeave,expenses,balances,names,totalExpenses,accountingAvailable,accountingAvailable);
+    }
+    public GroupDetails(Group group,List<MemberIdentity> members,boolean canLeave,List<Expense> expenses,Map<String,Long> balances,Map<String,String> names,long totalExpenses,boolean accountingAvailable,boolean expensesAvailable){
+        this.expensesAvailable=expensesAvailable;
         this.accountingAvailable=accountingAvailable;
         this.group=group;
         this.members=Collections.unmodifiableList(new ArrayList<>(members));

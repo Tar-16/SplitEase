@@ -122,6 +122,55 @@ service cloud.firestore {
         && request.auth.uid in resource.data.memberIds && modifyGroup(request.resource.data,resource.data);
       allow delete: if false;
     }
+    function expenseMember(groupId) {
+      return signedIn() && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+    }
+    function expenseRow(ids,shares,base,remainder,i) {
+      let uid=ids[i];
+      let share=shares[uid];
+      return uid is string && (i == 0 || ids[i-1] < uid)
+        && share is int && share == base + (i < remainder ? 1 : 0);
+    }
+    function expenseAt(ids,shares,n,base,remainder,i) { return n <= i || expenseRow(ids,shares,base,remainder,i); }
+    function expenseShape(p,old) {
+      let g=get(/databases/$(database)/documents/groups/$(p.groupId)).data;
+      let n=p.participants.size();
+      let base=int(p.amountPaise / n);
+      let remainder=p.amountPaise % n;
+      let allowed=g.memberIds.toSet().union(old.get('participants',[]).toSet());
+      return p.keys().hasAll(['groupId','title','description','amountPaise','payerId','creatorId','category','expenseDate','participants','shares','revision','deleted','createdAt','updatedAt'])
+        && p.keys().hasOnly(['groupId','title','description','amountPaise','payerId','creatorId','category','expenseDate','participants','shares','revision','deleted','createdAt','updatedAt'])
+        && request.auth.uid in g.memberIds && g.type in ['FLAT','TRIP']
+        && p.title is string && p.title.size()>0 && p.title.size()<=200 && p.title.matches('(?s).*[^ \t\r\n].*')
+        && p.description is string && p.description.size()<=2000
+        && p.amountPaise is int && p.amountPaise>0 && p.amountPaise<=1000000000000
+        && p.expenseDate is int && p.expenseDate>=0
+        && p.category in ['Food','Travel','Rent','Bills','Other']
+        && p.payerId is string && p.payerId in g.members
+        && (p.payerId in g.memberIds || ('payerId' in old && p.payerId == old.payerId))
+        && p.creatorId is string && p.creatorId in g.members
+        && p.participants is list && p.participants.size()>0 && p.participants.size()<=8
+        && p.participants.toSet().size()==n && allowed.hasAll(p.participants) && g.members.keys().hasAll(p.participants)
+        && p.shares is map && p.shares.keys().toSet()==p.participants.toSet()
+        && p.revision is int && p.revision>0 && p.deleted == false
+        && p.createdAt is timestamp && p.updatedAt == request.time
+        && expenseAt(p.participants,p.shares,n,base,remainder,0) && expenseAt(p.participants,p.shares,n,base,remainder,1) && expenseAt(p.participants,p.shares,n,base,remainder,2) && expenseAt(p.participants,p.shares,n,base,remainder,3)
+        && expenseAt(p.participants,p.shares,n,base,remainder,4) && expenseAt(p.participants,p.shares,n,base,remainder,5) && expenseAt(p.participants,p.shares,n,base,remainder,6) && expenseAt(p.participants,p.shares,n,base,remainder,7);
+    }
+    match /expenses/{expenseId} {
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/expenses/$(expenseId)) || expenseMember(resource.data.groupId));
+      allow list: if expenseMember(resource.data.groupId);
+      allow create: if signedIn() && expenseId.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+        && expenseShape(request.resource.data,{}) && request.resource.data.creatorId==request.auth.uid
+        && request.resource.data.revision==1 && request.resource.data.createdAt==request.time;
+      allow update: if expenseMember(resource.data.groupId) && resource.data.deleted == false
+        && request.resource.data.groupId==resource.data.groupId && request.resource.data.creatorId==resource.data.creatorId
+        && request.resource.data.createdAt==resource.data.createdAt && request.resource.data.updatedAt==request.time
+        && request.resource.data.revision is int && request.resource.data.revision==resource.data.revision+1
+        && ((request.resource.data.deleted==true && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted','revision','updatedAt']))
+          || expenseShape(request.resource.data,resource.data));
+      allow delete: if false;
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }
