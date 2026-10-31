@@ -69,7 +69,7 @@ public final class GroupDetailFragment extends GroupScreenFragment {
                     binding.members.addView(row.getRoot());
                 }
                 binding.leave.setEnabled(detail.canLeave && !state.busy);
-                binding.leaveReason.setText(!detail.accountingAvailable?R.string.cloud_leaving_unavailable:admin?R.string.group_leave_admin:R.string.group_leave_balance);
+                binding.leaveReason.setText(com.example.splitease.debug.CloudGroups.dependencies(this)!=null?R.string.cloud_leaving_unavailable:admin?R.string.group_leave_admin:R.string.group_leave_balance);
             } else { binding.title.setText(R.string.tab_groups); binding.meta.setText(""); }
             showTab();
             if(state.left && isResumed()) { model.consumeNavigation(); back(); }

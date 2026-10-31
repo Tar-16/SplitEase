@@ -11,11 +11,16 @@ public final class SettlementCalculator {
         Remaining(String id,long amount) { this.id=id; this.amount=amount; }
     }
     public static List<Transfer> suggest(Map<String,Long> balances) {
+        for(String id:balances.keySet())Rules.id(id);
+        return suggestIdentities(balances);
+    }
+    /** Same algorithm for opaque cloud identities. */
+    public static List<Transfer> suggestIdentities(Map<String,Long> balances) {
         Comparator<Remaining> order=Comparator.<Remaining>comparingLong(v -> v.amount).reversed().thenComparing(v -> v.id);
         PriorityQueue<Remaining> debtors=new PriorityQueue<>(order),creditors=new PriorityQueue<>(order);
         long debts=0,credits=0;
         for(Map.Entry<String,Long> entry:balances.entrySet()) {
-            Rules.id(entry.getKey()); long amount=entry.getValue();
+            if(entry.getKey()==null||entry.getKey().isEmpty())throw new IllegalArgumentException("Identity required"); long amount=entry.getValue();
             if(amount<0) { long magnitude=Math.negateExact(amount); debts=Math.addExact(debts,magnitude); debtors.add(new Remaining(entry.getKey(),magnitude)); }
             if(amount>0) { credits=Math.addExact(credits,amount); creditors.add(new Remaining(entry.getKey(),amount)); }
         }

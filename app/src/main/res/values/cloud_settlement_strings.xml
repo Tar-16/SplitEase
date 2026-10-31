@@ -1,0 +1,3 @@
+<resources>
+ <string name="cloud_settlement_error">Payment could not be recorded. Refresh, select the latest suggestion or record, and retry. Check membership, amount (up to ₹10 billion per record) and connection.</string>
+</resources>

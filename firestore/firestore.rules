@@ -2,6 +2,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    // SECURITY HOLD: history-derived settlement ceilings are not Rules-enforced.
+    // Financial writes are demo-only. Never broaden/remove this audience gate
+    // without a reviewed server-enforceable ledger design. This is not debt validation.
+    // Real Firestore verifies ID-token audience against its project; a production
+    // project's valid token cannot carry this demo project's reserved audience.
+    function demoFinancialWritesOnly() {
+      return signedIn() && request.auth.token.aud == 'demo-splitease-auth';
+    }
     function owner(uid) { return signedIn() && request.auth.uid == uid; }
     function validName(display, normalized) {
       return display is string && normalized is string
@@ -56,7 +64,7 @@ service cloud.firestore {
     }
     function groupShape(p) {
       return p.keys().hasAll(['name','type','creatorId','adminId','createdAt','updatedAt','revision','memberIds','members'])
-        && p.keys().hasOnly(['name','type','creatorId','adminId','createdAt','updatedAt','revision','memberIds','members'])
+        && p.keys().hasOnly(['name','type','creatorId','adminId','createdAt','updatedAt','revision','memberIds','members','financialRevision','financialRecord'])
         && p.name is string && p.name.size() > 0 && p.name.size() <= 100 && p.name.matches('(?s).*[^ \t\r\n].*')
         && p.type in ['FLAT','TRIP'] && p.creatorId is string && p.adminId is string
         && p.createdAt is timestamp && p.updatedAt == request.time && p.revision is int
@@ -86,7 +94,7 @@ service cloud.firestore {
     function initialMember(p,i) { return p.memberIds.size() <= i || initialAt(p,i); }
     function createGroup(p) {
       // Eight initial members keep per-write rule access below ten. Later adds validate one member.
-      return groupShape(p) && p.creatorId == request.auth.uid && p.adminId == request.auth.uid
+      return !p.keys().hasAny(['financialRevision','financialRecord']) && groupShape(p) && p.creatorId == request.auth.uid && p.adminId == request.auth.uid
         && p.createdAt == request.time && p.revision == 1 && p.memberIds.size() <= 8
         && p.members.size() == p.memberIds.size()
         && initialMember(p,0) && initialMember(p,1) && initialMember(p,2) && initialMember(p,3)
@@ -106,7 +114,7 @@ service cloud.firestore {
         && p.memberIds.hasAll(old.memberIds) && validJoin(p,old,added[0]);
     }
     function modifyGroup(p,old) {
-      return groupShape(p) && p.creatorId == old.creatorId && p.createdAt == old.createdAt
+      return !p.diff(old).affectedKeys().hasAny(['financialRevision','financialRecord']) && groupShape(p) && p.creatorId == old.creatorId && p.createdAt == old.createdAt
         && p.revision == old.revision+1
         && ((p.members == old.members && p.memberIds == old.memberIds
             && ((p.name == old.name && p.type == old.type && p.adminId in old.memberIds)
@@ -114,12 +122,28 @@ service cloud.firestore {
           || addOne(p,old));
       // No leave/remove/delete branch: cloud financial eligibility is unavailable until 9E.
     }
+    function financialGroupChange(p,old,id) {
+      let record=getAfter(/databases/$(database)/documents/$(p.financialRecord.collection)/$(p.financialRecord.id)).data;
+      return demoFinancialWritesOnly() && request.auth.uid in old.memberIds
+        && p.diff(old).affectedKeys().hasOnly(['financialRevision','financialRecord'])
+        && p.financialRevision is int && p.financialRevision==old.get('financialRevision',0)+1
+        && p.financialRecord.keys().hasAll(['collection','id']) && p.financialRecord.keys().hasOnly(['collection','id'])
+        && p.financialRecord.collection in ['expenses','settlements']
+        && record.groupId==id && record.financialVersion==p.financialRevision;
+    }
+    function fencedFinancial(p,kind,id) {
+      let before=get(/databases/$(database)/documents/groups/$(p.groupId)).data;
+      let after=getAfter(/databases/$(database)/documents/groups/$(p.groupId)).data;
+      return demoFinancialWritesOnly() && p.financialVersion is int && p.financialVersion==before.get('financialRevision',0)+1
+        && after.financialRevision==p.financialVersion && after.financialRecord=={'collection':kind,'id':id};
+    }
     match /groups/{groupId} {
       allow get: if signedIn() && (!exists(/databases/$(database)/documents/groups/$(groupId)) || request.auth.uid in resource.data.memberIds);
       allow list: if signedIn() && request.auth.uid in resource.data.memberIds;
       allow create: if signedIn() && groupId.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}') && createGroup(request.resource.data);
-      allow update: if signedIn() && request.auth.uid == resource.data.adminId
-        && request.auth.uid in resource.data.memberIds && modifyGroup(request.resource.data,resource.data);
+      allow update: if signedIn() && ((request.auth.uid == resource.data.adminId
+        && request.auth.uid in resource.data.memberIds && modifyGroup(request.resource.data,resource.data))
+        || financialGroupChange(request.resource.data,resource.data,groupId));
       allow delete: if false;
     }
     function expenseMember(groupId) {
@@ -138,8 +162,8 @@ service cloud.firestore {
       let base=int(p.amountPaise / n);
       let remainder=p.amountPaise % n;
       let allowed=g.memberIds.toSet().union(old.get('participants',[]).toSet());
-      return p.keys().hasAll(['groupId','title','description','amountPaise','payerId','creatorId','category','expenseDate','participants','shares','revision','deleted','createdAt','updatedAt'])
-        && p.keys().hasOnly(['groupId','title','description','amountPaise','payerId','creatorId','category','expenseDate','participants','shares','revision','deleted','createdAt','updatedAt'])
+      return p.keys().hasAll(['groupId','title','description','amountPaise','payerId','creatorId','category','expenseDate','participants','shares','revision','deleted','createdAt','updatedAt','financialVersion'])
+        && p.keys().hasOnly(['groupId','title','description','amountPaise','payerId','creatorId','category','expenseDate','participants','shares','revision','deleted','createdAt','updatedAt','financialVersion'])
         && request.auth.uid in g.memberIds && g.type in ['FLAT','TRIP']
         && p.title is string && p.title.size()>0 && p.title.size()<=200 && p.title.matches('(?s).*[^ \t\r\n].*')
         && p.description is string && p.description.size()<=2000
@@ -161,14 +185,38 @@ service cloud.firestore {
       allow get: if signedIn() && (!exists(/databases/$(database)/documents/expenses/$(expenseId)) || expenseMember(resource.data.groupId));
       allow list: if expenseMember(resource.data.groupId);
       allow create: if signedIn() && expenseId.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-        && expenseShape(request.resource.data,{}) && request.resource.data.creatorId==request.auth.uid
+        && fencedFinancial(request.resource.data,'expenses',expenseId) && expenseShape(request.resource.data,{}) && request.resource.data.creatorId==request.auth.uid
         && request.resource.data.revision==1 && request.resource.data.createdAt==request.time;
-      allow update: if expenseMember(resource.data.groupId) && resource.data.deleted == false
+      allow update: if expenseMember(resource.data.groupId) && fencedFinancial(request.resource.data,'expenses',expenseId) && resource.data.deleted == false
         && request.resource.data.groupId==resource.data.groupId && request.resource.data.creatorId==resource.data.creatorId
         && request.resource.data.createdAt==resource.data.createdAt && request.resource.data.updatedAt==request.time
         && request.resource.data.revision is int && request.resource.data.revision==resource.data.revision+1
-        && ((request.resource.data.deleted==true && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted','revision','updatedAt']))
+        && ((request.resource.data.deleted==true && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted','revision','updatedAt','financialVersion']))
           || expenseShape(request.resource.data,resource.data));
+      allow delete: if false;
+    }
+    function settlementShape(p) {
+      let group=get(/databases/$(database)/documents/groups/$(p.groupId)).data;
+      return p.keys().hasAll(['groupId','payerId','payeeId','amountPaise','settlementDate','revision','financialVersion','recordedBy','createdAt','updatedAt'])
+        && p.keys().hasOnly(['groupId','payerId','payeeId','amountPaise','settlementDate','revision','financialVersion','recordedBy','createdAt','updatedAt'])
+        && request.auth.uid in group.memberIds
+        && p.payerId is string && p.payeeId is string && p.payerId!=p.payeeId
+        && p.payerId in group.members && p.payeeId in group.members
+        && p.recordedBy is string && p.recordedBy in group.members
+        && p.amountPaise is int && p.amountPaise>0 && p.amountPaise<=1000000000000
+        && p.settlementDate is int && p.settlementDate>=0
+        && p.revision is int && p.revision>0 && p.createdAt is timestamp && p.updatedAt==request.time;
+    }
+    match /settlements/{id} {
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/settlements/$(id)) || expenseMember(resource.data.groupId));
+      allow list: if expenseMember(resource.data.groupId);
+      allow create: if signedIn() && id.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+        && settlementShape(request.resource.data) && fencedFinancial(request.resource.data,'settlements',id)
+        && request.auth.uid in [request.resource.data.payerId,request.resource.data.payeeId]
+        && request.resource.data.recordedBy==request.auth.uid && request.resource.data.revision==1 && request.resource.data.createdAt==request.time;
+      allow update: if signedIn() && settlementShape(request.resource.data) && fencedFinancial(request.resource.data,'settlements',id)
+        && request.resource.data.revision==resource.data.revision+1
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaise','settlementDate','revision','financialVersion','updatedAt']);
       allow delete: if false;
     }
     match /{document=**} { allow read, write: if false; }

@@ -15,6 +15,8 @@ import static com.example.splitease.repository.CloudGroupException.Code.*;
 public final class FirestoreGroupRepository implements GroupRepository,AutoCloseable {
     private final FirebaseFirestore db;
     private ExpenseRepository expenses;
+    private SettlementRepository accounting;
+    public void attachAccounting(SettlementRepository accounting){this.accounting=accounting;}
     public void attachExpenses(ExpenseRepository expenses){this.expenses=expenses;}
     private final CloudProfileRepository profiles;
     private final com.google.firebase.auth.FirebaseAuth sdkAuth;
@@ -143,6 +145,7 @@ public final class FirestoreGroupRepository implements GroupRepository,AutoClose
     })));}
     private <T>ObservableQuery<T> document(String supplied,String id,java.util.function.Function<DocumentSnapshot,T> parse){return observe(supplied,live->live.attach(group(id).addSnapshotListener(live.executor,MetadataChanges.INCLUDE,(snapshot,error)->{if(error!=null){live.error(error);return;}if(snapshot==null||!live.server(snapshot.getMetadata()))return;try{if(!ids(snapshot).contains(supplied))throw new SecurityException();live.value(parse.apply(snapshot));}catch(RuntimeException invalid){live.error(invalid);}})));}
     @Override public ObservableQuery<GroupDetails> observeGroupDetails(String actor,String id){
+        if(accounting!=null)return map(accounting.observeSettlementDetails(actor,id),value->value.group);
         ObservableQuery<GroupDetails> source=document(actor,id,doc->details(doc,actor));
         if(expenses==null)return source;
         return (executor,observer)->{
@@ -159,6 +162,6 @@ public final class FirestoreGroupRepository implements GroupRepository,AutoClose
     private <A,B>ObservableQuery<B> map(ObservableQuery<A> source,java.util.function.Function<A,B> transform){return (executor,observer)->source.subscribe(executor,new ObservableQuery.Observer<A>(){public void onChanged(A value){observer.onChanged(transform.apply(value));}public void onError(Exception error){observer.onError(error);}});}
     @Override public ObservableQuery<List<Group>> observeGroups(String actor){return map(observeGroupSummaries(actor),values->{List<Group> result=new ArrayList<>();for(GroupDetails value:values)result.add(value.group);return Collections.unmodifiableList(result);});}
     @Override public ObservableQuery<List<GroupMember>> observeMembers(String id){String uid=actor();return document(uid,id,this::parseMembers);}
-    @Override public ObservableQuery<Map<String,Long>> observeBalances(String id){return (executor,observer)->{AtomicBoolean cancelled=new AtomicBoolean();executor.execute(()->{if(!cancelled.get())observer.onError(new CloudGroupException(UNSUPPORTED));});return ()->cancelled.set(true);};}
+    @Override public ObservableQuery<Map<String,Long>> observeBalances(String id){if(accounting!=null)return map(accounting.observeSettlementDetails(actor(),id),value->value.group.balances);return (executor,observer)->{AtomicBoolean cancelled=new AtomicBoolean();executor.execute(()->{if(!cancelled.get())observer.onError(new CloudGroupException(UNSUPPORTED));});return ()->cancelled.set(true);};}
     @Override public void close(){if(!closed.compareAndSet(false,true))return;sessionSubscription.close();epoch.incrementAndGet();for(Live<?> live:streams)live.error(new CloudGroupException(CANCELLED));timer.shutdown();}
 }

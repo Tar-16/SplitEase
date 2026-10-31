@@ -18,7 +18,8 @@ public final class CloudGroups {
             FirebaseFirestore db=FirebaseFirestore.getInstance(FirebaseAuthSandbox.sdk(context).getApp());
             com.example.splitease.data.firebase.FirestoreExpenseRepository expenses=new com.example.splitease.data.firebase.FirestoreExpenseRepository(db,auth);
             FirestoreGroupRepository groups=new FirestoreGroupRepository(db,auth,FirebaseAuthSandbox.profiles(context));groups.attachExpenses(expenses);
-            owner=new GroupDependencies(auth,groups,expenses);
+            com.example.splitease.data.firebase.FirestoreSettlementRepository settlements=new com.example.splitease.data.firebase.FirestoreSettlementRepository(db,auth);groups.attachAccounting(settlements);
+            owner=new GroupDependencies(auth,groups,expenses,settlements);
         }return owner;
     }
     public static GroupDependencies dependencies(Fragment fragment){return NavHostFragment.findNavController(fragment).getGraph().getId()==R.id.cloud_groups_graph?owner(fragment.requireContext()):null;}

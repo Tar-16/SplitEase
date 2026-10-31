@@ -1,0 +1,11 @@
+package com.example.splitease.domain;
+import com.example.splitease.model.*;
+import java.util.*;
+import org.junit.Test;
+import static org.junit.Assert.*;
+public class CloudSettlementCalculatorTest {
+ @Test public void opaqueGreedyIsDeterministicAndConservesPaise(){Map<String,Long> net=new HashMap<>();net.put("credit-B",51L);net.put("credit-A",51L);net.put("debt-B",-51L);net.put("debt-A",-51L);List<Transfer> result=SettlementCalculator.suggestIdentities(net);assertEquals(2,result.size());assertEquals("debt-A",result.get(0).payerId);assertEquals("credit-A",result.get(0).payeeId);assertEquals(51,result.get(0).amountPaise);assertThrows(IllegalArgumentException.class,()->SettlementCalculator.suggest(net));}
+ @Test public void partialPaymentAndEditLimitExcludeTheOldRecord(){String id=UUID.randomUUID().toString();Expense expense=new Expense(id,id,"Food",101,"credit","credit","Food",0,Collections.singletonList(new ExpenseSplit(id,"debt",101)));Settlement partial=new Settlement(UUID.randomUUID().toString(),id,"debt","credit",40,0);Map<String,Long> net=Balances.calculate(Collections.singletonList(expense),Collections.singletonList(partial));assertEquals(Long.valueOf(61),net.get("credit"));assertEquals(61,SettlementCalculator.suggestIdentities(net).get(0).amountPaise);assertEquals(101,SettlementCalculator.editLimit(Collections.singletonList(expense),Collections.singletonList(partial),partial));assertEquals(40,SettlementCalculator.editLimit(Collections.emptyList(),Collections.singletonList(partial),partial));}
+ @Test public void zeroOverflowAndNonconservationAreExplicit(){assertTrue(SettlementCalculator.suggestIdentities(Collections.singletonMap("zero",0L)).isEmpty());assertThrows(ArithmeticException.class,()->SettlementCalculator.suggestIdentities(Collections.singletonMap("debt",Long.MIN_VALUE)));assertThrows(IllegalArgumentException.class,()->SettlementCalculator.suggestIdentities(Collections.singletonMap("credit",1L)));}
+ @Test public void duplicateHeuristicUsesPartiesAmountAndUtcDay(){Settlement old=new Settlement("old","g","payer","payee",10,86400001),same=new Settlement("new","g","payer","payee",10,86400002);assertTrue(SettlementCalculator.potentialDuplicate(Collections.singletonList(old),same));assertFalse(SettlementCalculator.potentialDuplicate(Collections.singletonList(old),new Settlement("old","g","payer","payee",10,86400002)));}
+}

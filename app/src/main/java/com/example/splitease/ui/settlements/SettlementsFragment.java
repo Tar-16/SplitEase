@@ -28,7 +28,12 @@ public final class SettlementsFragment extends Fragment {
         binding=FragmentSettlementsBinding.inflate(inflater,parent,false); return binding.getRoot();
     }
     @Override public void onViewCreated(@NonNull View view,Bundle state) {
-        model=new ViewModelProvider(this).get(SettlementsViewModel.class); model.configure(requireArguments().getString("groupId"));
+        com.example.splitease.ui.groups.GroupDependencies dependencies=com.example.splitease.debug.CloudGroups.dependencies(this);
+        if(dependencies==null)model=new ViewModelProvider(this).get(SettlementsViewModel.class);
+        else model=new ViewModelProvider(this,new androidx.lifecycle.AbstractSavedStateViewModelFactory(this,getArguments()){
+            @Override protected <T extends androidx.lifecycle.ViewModel>T create(String key,Class<T> type,androidx.lifecycle.SavedStateHandle handle){return type.cast(new SettlementsViewModel(requireActivity().getApplication(),handle,dependencies));}
+        }).get(SettlementsViewModel.class);
+        model.configure(requireArguments().getString("groupId"));
         ViewCompat.setAccessibilityHeading(binding.title,true);
         binding.error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         binding.back.setOnClickListener(v -> NavHostFragment.findNavController(this).popBackStack());
@@ -76,6 +81,7 @@ public final class SettlementsFragment extends Fragment {
                 binding.record.setEnabled(!state.busy && model.mayRecord() && limit>0);
                 binding.partyOnly.setVisibility(model.mayRecord()?View.GONE:View.VISIBLE);
             }
+            if(model.cloud()){binding.pay.setVisibility(View.GONE);binding.upiAddress.setVisibility(View.GONE);binding.upiNotice.setVisibility(View.GONE);}
             binding.suggestions.removeAllViews(); binding.records.removeAllViews();
             binding.empty.setVisibility(details.suggestions.isEmpty()?View.VISIBLE:View.GONE);
             binding.noRecords.setVisibility(details.records.isEmpty()?View.VISIBLE:View.GONE);

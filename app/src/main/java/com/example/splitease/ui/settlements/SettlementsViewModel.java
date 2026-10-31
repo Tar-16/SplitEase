@@ -21,6 +21,7 @@ public final class SettlementsViewModel extends AndroidViewModel {
         public final int error;
         State(SettlementsViewModel m) { details=m.details; actor=m.actor; busy=m.busy; loading=m.loading; duplicate=m.duplicate; selected=!m.text("payer").isEmpty(); editing=!m.text("record").isEmpty(); error=m.error; }
     }
+    private final boolean cloud;
     private final AuthService auth;
     private final SettlementRepository repository;
     private final SavedStateHandle saved;
@@ -33,8 +34,12 @@ public final class SettlementsViewModel extends AndroidViewModel {
     private int epoch,error;
     private boolean busy,loading=true,duplicate;
     public SettlementsViewModel(Application application,SavedStateHandle saved) {
-        super(application); this.saved=saved; SplitEaseApplication app=(SplitEaseApplication)application; auth=app.auth(); repository=app.settlements(); emit();
+        this(application,saved,null);
     }
+    public SettlementsViewModel(Application application,SavedStateHandle saved,com.example.splitease.ui.groups.GroupDependencies dependencies){
+        super(application);this.saved=saved;cloud=dependencies!=null;SplitEaseApplication app=(SplitEaseApplication)application;auth=cloud?dependencies.auth:app.auth();repository=cloud?dependencies.settlements:app.settlements();emit();
+    }
+    public boolean cloud(){return cloud;}
     public void configure(String groupId) { this.groupId=groupId; }
     public LiveData<State> state() { return state; }
     public String text(String key) { String value=saved.get(key); return value==null?"":value; }
@@ -46,7 +51,7 @@ public final class SettlementsViewModel extends AndroidViewModel {
         if(sessionWatch!=null) return;
         sessionWatch=auth.sessions().subscribe(main,new ObservableQuery.Observer<SessionState>() {
             @Override public void onChanged(SessionState value) {
-                String id=value.status==SessionState.Status.SIGNED_IN?value.user.id:null;
+                String id=value.status==SessionState.Status.SIGNED_IN&&value.backend==(cloud?SessionState.Backend.FIREBASE:SessionState.Backend.LOCAL)?value.user.id:null;
                 if(!Objects.equals(actor,id)) {
                     epoch++; busy=false; duplicate=false; details=null;
                     if(id==null || !id.equals(saved.get("owner"))) clearSelection();
@@ -69,12 +74,13 @@ public final class SettlementsViewModel extends AndroidViewModel {
     }
     public void select(Transfer transfer) {
         if(busy || details==null) return;
+        saved.set("revision",0L);saved.set("draft_id",UUID.randomUUID().toString());
         saved.set("record",""); saved.set("payer",transfer.payerId); saved.set("payee",transfer.payeeId);
         saved.set("amount",ExpenseAmounts.input(transfer.amountPaise)); saved.set("date",System.currentTimeMillis()); error=0; emit();
     }
     public void select(Settlement record) {
         if(busy || details==null) return;
-        saved.set("record",record.id); saved.set("payer",record.payerId); saved.set("payee",record.payeeId);
+        saved.set("revision",record.revision);saved.set("record",record.id); saved.set("payer",record.payerId); saved.set("payee",record.payeeId);
         saved.set("amount",ExpenseAmounts.input(record.amountPaise)); saved.set("date",record.settlementDate); error=0; emit();
     }
     private Settlement old() { if(details!=null) for(Settlement record:details.records) if(record.id.equals(text("record"))) return record; return null; }
@@ -83,12 +89,14 @@ public final class SettlementsViewModel extends AndroidViewModel {
         try {
         Settlement old=old();
         if(!text("record").isEmpty()) return old==null?0:SettlementCalculator.editLimit(details.group.expenses,details.records,old);
+        if(cloud){for(Transfer transfer:details.suggestions)if(transfer.payerId.equals(text("payer"))&&transfer.payeeId.equals(text("payee")))return transfer.amountPaise;return 0;}
         return SettlementCalculator.suggestedLimit(details.group.balances,text("payer"),text("payee"));
         } catch(IllegalArgumentException | ArithmeticException failure) { return 0; }
     }
     public boolean mayRecord() { return actor!=null && details!=null && (old()!=null || actor.equals(text("payer")) || actor.equals(text("payee"))); }
     public String upi() { return details==null?null:details.recipientUpi.get(text("payee")); }
     public Uri paymentUri() {
+        if(cloud)throw new IllegalArgumentException("Cloud UPI is unavailable");
         if(details==null || actor==null || !actor.equals(text("payer")) || !text("record").isEmpty()) throw new IllegalArgumentException();
         // Always uses the currently selected recommendation, never an edited/manual record amount.
         long suggested=SettlementCalculator.suggestedLimit(details.group.balances,text("payer"),text("payee"));
@@ -101,15 +109,15 @@ public final class SettlementsViewModel extends AndroidViewModel {
         try {
             long amount=ExpenseAmounts.parse(text("amount")); if(amount>limit()) throw new IllegalArgumentException();
             Rules.date(date());
-            value=new Settlement(text("record").isEmpty()?UUID.randomUUID().toString():text("record"),groupId,text("payer"),text("payee"),amount,date());
+            value=new Settlement(text("record").isEmpty()?(cloud?text("draft_id"):UUID.randomUUID().toString()):text("record"),groupId,text("payer"),text("payee"),amount,date(),cloud?(Long)saved.get("revision"):0);
         } catch(IllegalArgumentException | ArithmeticException failure) { error=R.string.settlement_invalid; emit(); return; }
         int token=epoch; busy=true; duplicate=false; error=0; emit();
         repository.saveSettlement(actor,value,acknowledgeDuplicate,main,new RepositoryCallback<Settlement>() {
             @Override public void onSuccess(Settlement result) { if(token==epoch) { busy=false; clearSelection(); emit(); } }
-            @Override public void onError(Exception failure) { if(token==epoch) { busy=false; duplicate=failure instanceof DuplicateSettlementException; error=duplicate?0:R.string.settlement_invalid; emit(); } }
+            @Override public void onError(Exception failure) { if(token==epoch) { busy=false; duplicate=failure instanceof DuplicateSettlementException; error=duplicate?0:cloud?R.string.cloud_settlement_error:R.string.settlement_invalid; emit(); } }
         });
     }
     public void consumeDuplicate() { duplicate=false; }
-    private void clearSelection() { for(String key:Arrays.asList("record","payer","payee","amount","date")) saved.remove(key); }
+    private void clearSelection() { for(String key:Arrays.asList("record","payer","payee","amount","date","revision","draft_id")) saved.remove(key); }
     @Override protected void onCleared() { stop(); epoch++; }
 }
