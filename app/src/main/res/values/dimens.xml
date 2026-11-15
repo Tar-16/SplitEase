@@ -1,0 +1,4 @@
+<resources>
+    <!-- Breathing room that keeps the photograph visible between the home heading and its cards. -->
+    <dimen name="home_photo_gap">132dp</dimen>
+</resources>

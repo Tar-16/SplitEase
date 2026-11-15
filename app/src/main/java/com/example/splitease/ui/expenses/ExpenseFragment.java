@@ -67,7 +67,7 @@ public final class ExpenseFragment extends Fragment {
         binding.receiptDebugToggle.setOnClickListener(v->{showReceiptDebug=!showReceiptDebug;binding.receiptDebug.setVisibility(showReceiptDebug?View.VISIBLE:View.GONE);});
         binding.receiptUseAmount.setOnClickListener(v->model.useDetectedAmount());
         binding.receiptCancelCapture.setOnClickListener(v->model.captureResult(false));
-        binding.receiptView.setOnClickListener(v->{String id=model.visibleReceiptId();if(!id.isEmpty()){Bundle args=new Bundle();args.putString("receiptId",id);NavHostFragment.findNavController(this).navigate(R.id.receipt_viewer,args);}});
+        binding.receiptView.setOnClickListener(v->{String id=model.visibleReceiptId();if(!id.isEmpty()){Bundle args=new Bundle();args.putString("receiptId",id);NavHostFragment.findNavController(this).navigate(R.id.receipt_viewer,args,com.example.splitease.ui.Transitions.page().build());}});
         model.state().observe(getViewLifecycleOwner(),state -> {
             rendering=true;
             binding.progress.setVisibility(state.loading || state.busy?View.VISIBLE:View.GONE);

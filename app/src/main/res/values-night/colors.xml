@@ -1,10 +1,9 @@
 <resources>
-    <color name="primary">#62D8C4</color>
-    <color name="on_primary">#00382F</color>
-    <color name="background">#101B18</color>
-    <color name="surface">#192823</color>
-    <color name="text_primary">#E4F0EA</color>
-    <color name="text_secondary">#ABC2B8</color>
-    <color name="outline">#34483F</color>
-    <color name="accent_container">#203E35</color>
+    <color name="surface">#15211E</color>
+    <color name="glass_fill">#8C0E1715</color>
+    <color name="glass_stroke">#2EFFFFFF</color>
+    <color name="scrim_top">#B3060D0C</color>
+    <color name="scrim_middle">#66060D0C</color>
+    <color name="scrim_bottom">#D9060D0C</color>
+    <color name="scrim_deep">#BF060D0C</color>
 </resources>

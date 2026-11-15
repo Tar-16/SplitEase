@@ -61,7 +61,7 @@ public final class BillFragment extends Fragment {
    binding.currentLabel.setVisibility(bill==null?View.GONE:View.VISIBLE);binding.noCurrent.setVisibility(bill!=null&&!found?View.VISIBLE:View.GONE);binding.historyLabel.setVisibility(bill==null?View.GONE:View.VISIBLE);binding.noCycles.setVisibility(bill!=null&&old==0?View.VISIBLE:View.GONE);
   }
   rendering=false;if(state.savedId!=null){model.consumeSaved();
-   if(getArguments().getString("billId")==null){Bundle args=new Bundle();args.putString("billId",state.savedId);NavHostFragment.findNavController(this).navigate(R.id.bill_screen,args,new androidx.navigation.NavOptions.Builder().setPopUpTo(R.id.bill_screen,true).build());}
+   if(getArguments().getString("billId")==null){Bundle args=new Bundle();args.putString("billId",state.savedId);NavHostFragment.findNavController(this).navigate(R.id.bill_screen,args,com.example.splitease.ui.Transitions.page().setPopUpTo(R.id.bill_screen,true).build());}
    else binding.scroll.smoothScrollTo(0,0);}
  }
  private void cycle(LinearLayout parent,RecurringBillCycle cycle,boolean busy){

@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="match_parent">
-    <com.google.android.material.appbar.AppBarLayout android:id="@+id/group_app_bar" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@color/background" app:elevation="0dp">
+    <com.google.android.material.appbar.AppBarLayout android:id="@+id/group_app_bar" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@android:color/transparent" app:elevation="0dp" app:liftOnScroll="false">
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="24dp" android:paddingBottom="12dp" app:layout_scrollFlags="scroll">
-            <com.google.android.material.button.MaterialButton android:id="@+id/back" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_back" />
+            <com.google.android.material.button.MaterialButton style="@style/Widget.SplitEase.Button.Back" android:id="@+id/back" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_back" />
             <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/tab_groups" android:textAppearance="@style/TextAppearance.SplitEase.Title" />
             <TextView android:id="@+id/meta" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_members" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
             <ProgressBar android:id="@+id/progress" android:layout_width="32dp" android:layout_height="32dp" android:layout_gravity="center_horizontal" android:layout_marginTop="16dp" />
             <TextView android:id="@+id/error" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textColor="?attr/colorError" android:accessibilityLiveRegion="polite" android:visibility="gone" />
-            <com.google.android.material.button.MaterialButton android:id="@+id/refresh" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_refresh" />
-            <LinearLayout android:id="@+id/summary" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+            <com.google.android.material.button.MaterialButton style="@style/Widget.SplitEase.Button.Glass" android:id="@+id/refresh" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_refresh" />
+            <com.example.splitease.ui.widget.GlassCardView style="@style/Widget.SplitEase.Card" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp"><LinearLayout android:id="@+id/summary" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
                 <TextView android:id="@+id/total" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_total" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
                 <TextView android:id="@+id/your_balance" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_your_balance" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle" />
-            </LinearLayout>
+            </LinearLayout></com.example.splitease.ui.widget.GlassCardView>
         </LinearLayout>
-        <com.google.android.material.tabs.TabLayout android:id="@+id/tabs" android:layout_width="match_parent" android:layout_height="wrap_content" app:tabMode="scrollable" android:layout_marginStart="24dp" android:layout_marginEnd="24dp">
+        <com.google.android.material.tabs.TabLayout android:id="@+id/tabs" android:background="@android:color/transparent" android:layout_width="match_parent" android:layout_height="wrap_content" app:tabMode="scrollable" android:layout_marginStart="24dp" android:layout_marginEnd="24dp">
             <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/group_members" />
             <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/expenses_tab" />
             <com.google.android.material.tabs.TabItem android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/balances_tab" />
@@ -27,7 +27,7 @@
                 <LinearLayout android:id="@+id/members" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
                 <include android:id="@+id/member_search" layout="@layout/view_member_search" />
                 <TextView android:id="@+id/leave_reason" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_leave_balance" android:textAppearance="@style/TextAppearance.SplitEase.Body" />
-                <com.google.android.material.button.MaterialButton android:id="@+id/leave" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_leave" />
+                <com.google.android.material.button.MaterialButton android:textColor="?attr/colorError" style="@style/Widget.SplitEase.Button.Glass" android:id="@+id/leave" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/group_leave" />
             </LinearLayout>
             <LinearLayout android:id="@+id/expenses_panel" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
                 <TextView android:id="@+id/expenses_empty" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expenses_empty" android:textAppearance="@style/TextAppearance.SplitEase.Body" />

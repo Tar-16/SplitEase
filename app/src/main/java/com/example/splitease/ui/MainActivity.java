@@ -26,13 +26,16 @@ public final class MainActivity extends AppCompatActivity {
     private boolean synchronizing;
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        EdgeToEdge.enable(this);
+        // Content sits on a dark photograph in both modes, so system bar icons stay light.
+        EdgeToEdge.enable(this,androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT));
         binding=ActivityMainBinding.inflate(getLayoutInflater()); setContentView(binding.getRoot());
         navigationUserId=savedInstanceState == null ? null : savedInstanceState.getString("navigation_user_id");
         ViewCompat.setOnApplyWindowInsetsListener(binding.getRoot(), (view, windowInsets) -> {
             Insets bars=windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
             Insets keyboard=windowInsets.getInsets(WindowInsetsCompat.Type.ime());
-            view.setPadding(bars.left,bars.top,bars.right,Math.max(bars.bottom,keyboard.bottom));
+            // The backdrop stays edge to edge; only content is inset.
+            binding.mainContent.setPadding(bars.left,bars.top,bars.right,Math.max(bars.bottom,keyboard.bottom));
+            binding.startup.setPadding(bars.left,bars.top,bars.right,Math.max(bars.bottom,keyboard.bottom));
             return WindowInsetsCompat.CONSUMED;
         });
         ViewCompat.requestApplyInsets(binding.getRoot());
@@ -40,6 +43,17 @@ public final class MainActivity extends AppCompatActivity {
         if (host == null) throw new IllegalStateException("Navigation host missing");
         navigation=host.getNavController();
         NavigationUI.setupWithNavController(binding.bottomNavigation,navigation);
+        // Same state-saving tab switch as NavigationUI, with the shared fade-through transition.
+        binding.bottomNavigation.setOnItemSelectedListener(item -> {
+            NavDestination current=navigation.getCurrentDestination();
+            if (current != null && current.getId() == item.getItemId()) return true;
+            try {
+                navigation.navigate(item.getItemId(),null,Transitions.tab().setLaunchSingleTop(true).setRestoreState(true)
+                        .setPopUpTo(navigation.getGraph().getStartDestinationId(),false,true).build());
+                NavDestination selected=navigation.getCurrentDestination();
+                return selected != null && selected.getId() == item.getItemId();
+            } catch (IllegalArgumentException missing) { return false; }
+        });
         navigation.addOnDestinationChangedListener((controller,destination,args) -> synchronizeNavigation());
         if (navigation.getCurrentDestination() == null) {
             // Restore Navigation's pending stack behind the startup gate. Identity is checked below.
@@ -62,7 +76,7 @@ public final class MainActivity extends AppCompatActivity {
         binding.startupProgress.setVisibility(unavailable ? View.GONE : View.VISIBLE);
         binding.startupMessage.setText(unavailable ? R.string.session_unavailable : R.string.restoring_session);
         binding.retry.setVisibility(unavailable ? View.VISIBLE : View.GONE);
-        if (!ready) { binding.bottomNavigation.setVisibility(View.GONE); return; }
+        if (!ready) { showTabs(false); return; }
         boolean authenticated=session.status == SessionState.Status.SIGNED_IN;
         String userId=authenticated ? session.user.id : null;
         NavDestination current=navigation.getCurrentDestination();
@@ -84,13 +98,28 @@ public final class MainActivity extends AppCompatActivity {
                 navigationUserId=userId;
             } finally { synchronizing=false; }
             binding.mainContent.setVisibility(View.VISIBLE);
+            binding.mainContent.setAlpha(0f); binding.mainContent.animate().alpha(1f).setDuration(280).start();
         }
         if(authenticated && getIntent().hasExtra("billId")) {
             String bill=getIntent().getStringExtra("billId"),recipient=getIntent().getStringExtra("recipient");
             getIntent().removeExtra("billId");getIntent().removeExtra("recipient");
             if(userId.equals(recipient)) { try {com.example.splitease.domain.Rules.id(bill);Bundle args=new Bundle();args.putString("billId",bill);navigation.navigate(R.id.bill_screen,args);}catch(IllegalArgumentException invalid) { /* stale notification */ } }
         }
-        binding.bottomNavigation.setVisibility(authenticated && navigation.getCurrentDestination()!=null && isHome(navigation.getCurrentDestination().getId()) ? View.VISIBLE : View.GONE);
+        NavDestination shown=navigation.getCurrentDestination();
+        boolean home=shown!=null && isHome(shown.getId());
+        showTabs(authenticated && home);
+        // Forms and detail screens get a deeper scrim; home tabs and sign-in let the photograph through.
+        boolean photo=shown==null || home || shown.getId()==R.id.login || shown.getId()==R.id.signup;
+        binding.scrimDeep.animate().alpha(photo ? 0f : 1f).setDuration(320).start();
+    }
+    private void showTabs(boolean show) {
+        boolean shown=binding.bottomBar.getVisibility()==View.VISIBLE;
+        binding.bottomNavigation.setVisibility(show ? View.VISIBLE : View.GONE);
+        binding.bottomBar.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show && !shown) {
+            binding.bottomBar.setAlpha(0f); binding.bottomBar.setTranslationY(binding.bottomBar.getResources().getDisplayMetrics().density*20);
+            binding.bottomBar.animate().alpha(1f).translationY(0f).setDuration(300).start();
+        }
     }
     @Override protected void onNewIntent(android.content.Intent intent) {super.onNewIntent(intent);
         // Keep the Activity launch identity stable; only consume the notification payload.

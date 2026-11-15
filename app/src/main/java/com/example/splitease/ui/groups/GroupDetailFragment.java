@@ -34,7 +34,7 @@ public final class GroupDetailFragment extends GroupScreenFragment {
         binding.tabs.selectTab(binding.tabs.getTabAt(selectedTab));
         binding.settleUp.setOnClickListener(v -> {
             Bundle args=new Bundle(); args.putString("groupId",requireArguments().getString("groupId"));
-            NavHostFragment.findNavController(this).navigate(R.id.settlements_screen,args);
+            NavHostFragment.findNavController(this).navigate(R.id.settlements_screen,args,com.example.splitease.ui.Transitions.page().build());
         });
         binding.addExpense.setOnClickListener(v -> openExpense(null));
         if(getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE) binding.groupAppBar.setExpanded(false,false);
@@ -84,7 +84,7 @@ public final class GroupDetailFragment extends GroupScreenFragment {
     }
     private void openExpense(String id) {
         Bundle args=new Bundle(); args.putString("groupId",requireArguments().getString("groupId")); args.putString("expenseId",id);
-        NavHostFragment.findNavController(this).navigate(R.id.expense_screen,args);
+        NavHostFragment.findNavController(this).navigate(R.id.expense_screen,args,com.example.splitease.ui.Transitions.page().build());
     }
     private void renderAccounting(GroupDetails detail,String actor) {
         binding.expenseList.removeAllViews(); binding.balanceList.removeAllViews();

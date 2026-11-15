@@ -19,13 +19,15 @@ public final class GroupsFragment extends GroupScreenFragment {
     }
     @Override public void onViewCreated(@NonNull View view,Bundle saved) {
         setup("home",null,binding.title);
-        binding.newGroup.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.create_group));
+        binding.newGroup.setOnClickListener(v -> NavHostFragment.findNavController(this).navigate(R.id.create_group,null,com.example.splitease.ui.Transitions.page().build()));
         binding.refresh.setOnClickListener(v -> model.retry());
         model.state().observe(getViewLifecycleOwner(),state -> {
             status(state,binding.progress,binding.error);
             binding.newGroup.setEnabled(state.ready);
             binding.refresh.setVisibility(state.error==0 ? View.GONE : View.VISIBLE);
             binding.empty.setVisibility(state.ready && !state.loading && state.error==0 && state.groups.isEmpty() ? View.VISIBLE : View.GONE);
+            binding.groupCount.setText(state.ready && !state.loading && state.error==0 ? String.valueOf(state.groups.size()) : getString(R.string.home_count_placeholder));
+            renderTotals(state);
             binding.groupList.removeAllViews();
             for(GroupDetails detail:state.groups) {
                 ItemGroupBinding row=ItemGroupBinding.inflate(getLayoutInflater(),binding.groupList,false);
@@ -42,9 +44,24 @@ public final class GroupsFragment extends GroupScreenFragment {
                 if(!detail.expenses.isEmpty()) row.recent.setText(getString(R.string.expense_latest,ExpenseUi.date(detail.expenses.get(detail.expenses.size()-1).expenseDate)));
                 row.open.setContentDescription(getString(R.string.group_open_named,detail.group.name));
                 row.open.setOnClickListener(v -> open(detail.group.id));
+                row.getRoot().setOnClickListener(v -> open(detail.group.id));
                 binding.groupList.addView(row.getRoot());
             }
         });
+    }
+    /** Display-only sums of the signed-in member's own net balances; hidden when accounting is unavailable. */
+    private void renderTotals(GroupsViewModel.State state) {
+        boolean available=false; long owed=0,owing=0;
+        try {
+            for(GroupDetails detail:state.groups) {
+                if(!detail.accountingAvailable) continue;
+                available=true;
+                long balance=detail.balances.getOrDefault(state.actorId,0L);
+                if(balance>0) owed=Math.addExact(owed,balance); else owing=Math.addExact(owing,balance);
+            }
+        } catch(ArithmeticException overflow) { available=false; }
+        binding.balanceTiles.setVisibility(available && state.error==0 ? View.VISIBLE : View.GONE);
+        if(available) { binding.owedAmount.setText(InrFormatter.magnitude(owed)); binding.oweAmount.setText(InrFormatter.magnitude(owing)); }
     }
     @Override public void onDestroyView() { super.onDestroyView(); binding=null; }
 }
