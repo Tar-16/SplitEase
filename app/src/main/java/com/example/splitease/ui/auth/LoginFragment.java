@@ -29,7 +29,7 @@ public final class LoginFragment extends Fragment {
         binding.switchScreen.setOnClickListener(v -> {
             if (model.busy()) return;
             model.clearMessage(); AuthViews.hideKeyboard(view);
-            NavHostFragment.findNavController(this).navigate(R.id.signup);
+            NavHostFragment.findNavController(this).navigate(R.id.signup,null,com.example.splitease.ui.Transitions.page().build());
         });
         model.form().observe(getViewLifecycleOwner(),form -> {
             binding.submit.setEnabled(!form.busy); binding.switchScreen.setEnabled(!form.busy);

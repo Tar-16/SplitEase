@@ -31,7 +31,7 @@ abstract class GroupScreenFragment extends Fragment {
     protected void back() { NavHostFragment.findNavController(this).popBackStack(); }
     protected void open(String id) {
         Bundle args=new Bundle(); args.putString("groupId",id);
-        NavHostFragment.findNavController(this).navigate(R.id.group_detail,args);
+        NavHostFragment.findNavController(this).navigate(R.id.group_detail,args,com.example.splitease.ui.Transitions.page().build());
     }
     protected void status(GroupsViewModel.State state,View progress,TextView error) {
         progress.setVisibility(state.loading || state.busy || state.searching ? View.VISIBLE : View.GONE);

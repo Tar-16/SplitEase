@@ -41,7 +41,7 @@ public final class RecurringFragment extends Fragment {
    binding.empty.setVisibility(count==0?View.VISIBLE:View.GONE);binding.empty.setText(state.data.groups.isEmpty()?R.string.bill_no_groups:R.string.bill_empty);
   }rendering=false;
  }
- private void open(String id){Bundle args=new Bundle();args.putString("billId",id);NavHostFragment.findNavController(this).navigate(R.id.bill_screen,args);}
+ private void open(String id){Bundle args=new Bundle();args.putString("billId",id);NavHostFragment.findNavController(this).navigate(R.id.bill_screen,args,com.example.splitease.ui.Transitions.page().build());}
  @Override public void onStart(){super.onStart();model.start();}
  @Override public void onStop(){model.stop();super.onStop();}
  @Override public void onDestroyView(){super.onDestroyView();binding=null;}

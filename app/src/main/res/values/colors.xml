@@ -1,11 +1,21 @@
 <resources>
+    <!-- The interface sits on a photograph, so both modes use light-on-dark foregrounds; night deepens the glass and scrims. -->
     <color name="brand_teal">#0F9D8A</color>
-    <color name="primary">#007568</color>
-    <color name="on_primary">#FFFFFF</color>
-    <color name="background">#F5F8F7</color>
-    <color name="surface">#FFFFFF</color>
-    <color name="text_primary">#172D29</color>
-    <color name="text_secondary">#536963</color>
-    <color name="outline">#DEE8E4</color>
-    <color name="accent_container">#DDF4EE</color>
+    <color name="primary">#62D8C4</color>
+    <color name="on_primary">#00382F</color>
+    <color name="background">#0B1412</color>
+    <color name="surface">#1B2A26</color>
+    <color name="text_primary">#F2F7F5</color>
+    <color name="text_secondary">#C9D8D2</color>
+    <color name="outline">#6B8079</color>
+    <color name="accent_container">#3362D8C4</color>
+    <color name="error">#FFB4AB</color>
+    <color name="glass_fill">#66141F1C</color>
+    <color name="glass_stroke">#40FFFFFF</color>
+    <color name="tile_teal">#E60B7F70</color>
+    <color name="on_tile_teal">#FFFFFF</color>
+    <color name="scrim_top">#99081210</color>
+    <color name="scrim_middle">#40081210</color>
+    <color name="scrim_bottom">#C7081210</color>
+    <color name="scrim_deep">#A6081210</color>
 </resources>

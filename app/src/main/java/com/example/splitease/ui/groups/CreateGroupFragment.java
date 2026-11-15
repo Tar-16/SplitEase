@@ -43,7 +43,7 @@ public final class CreateGroupFragment extends GroupScreenFragment {
             }
             if(state.createdId!=null && isResumed()) {
                 Bundle args=new Bundle(); args.putString("groupId",state.createdId); model.consumeNavigation();
-                NavHostFragment.findNavController(this).navigate(R.id.group_detail,args,new NavOptions.Builder().setPopUpTo(R.id.create_group,true).build());
+                NavHostFragment.findNavController(this).navigate(R.id.group_detail,args,com.example.splitease.ui.Transitions.page().setPopUpTo(R.id.create_group,true).build());
             }
         });
     }
@@ -51,7 +51,7 @@ public final class CreateGroupFragment extends GroupScreenFragment {
         GroupsViewModel.State state=model.state().getValue();
         if(state!=null && state.createdId!=null) {
             Bundle args=new Bundle(); args.putString("groupId",state.createdId); model.consumeNavigation();
-            NavHostFragment.findNavController(this).navigate(R.id.group_detail,args,new NavOptions.Builder().setPopUpTo(R.id.create_group,true).build());
+            NavHostFragment.findNavController(this).navigate(R.id.group_detail,args,com.example.splitease.ui.Transitions.page().setPopUpTo(R.id.create_group,true).build());
         }
     }
     @Override public void onDestroyView() { super.onDestroyView(); binding=null; }
