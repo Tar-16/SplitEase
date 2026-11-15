@@ -7,6 +7,10 @@ import java.util.concurrent.Executor;
 /** Async operations. Supply a serial callback executor; missing records report onError. */
 public interface RecurringBillRepository {
     ObservableQuery<RecurringSnapshot> observeRecurring(String actorId);
+    /** List templates; cloud implementations may load history only for the selected bill. */
+    default ObservableQuery<RecurringSnapshot> observeRecurring(String actorId, String billId) {
+        return observeRecurring(actorId);
+    }
     void ensureCycles(String actorId,long now,Executor executor,RepositoryCallback<Integer> callback);
     void claimReminders(String actorId,long now,Executor executor,RepositoryCallback<List<BillReminder>> callback);
     void saveBill(String actorId, RecurringBill bill, Executor executor, RepositoryCallback<RecurringBill> callback);

@@ -1,0 +1,179 @@
+rules_version = '2';
+// DISPOSABLE EMULATOR PROOF ONLY. No application integration/deployment.
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function auth() { return request.auth!=null && request.auth.token.aud=='demo-splitease-posting-poc'; }
+  function uuid(id) { return id is string && id.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'); }
+  function acct(g,u) { return get(/databases/$(database)/documents/groups/$(g)/accounts/$(u)).data; }
+  function current(g) { return acct(g,request.auth.uid).active; }
+  function idle(p) { return p.phase=='IDLE' && p.op==null && p.checked==0 && p.cursor==0; }
+  function zero(g,u) { return {'gid':g,'uid':u,'net':0,'active':true,'rev':0,'markSeq':0,'markStep':-1}; }
+  function shape(p) {
+   return p.keys().hasOnly(['admin','creator','rev','phase','action','target','total','gross','op','checked','cursor','diag','expr'])
+    && p.admin is string && p.creator is string && p.rev is int && p.rev>=0 && p.rev<1000000000
+    && p.phase in ['IDLE','PREPARE','APPLY'] && p.total is int && p.total>=0 && p.total<=1000000000000000
+    && p.gross is int && p.gross>=0 && p.gross<=1000000000000000
+    && p.checked is int && p.checked>=0 && p.checked<=9 && p.cursor is int && p.cursor>=0 && p.cursor<=18
+    && p.diag is int && p.diag>=0 && p.diag<=11 && p.expr is int && p.expr>=0 && p.expr<=16;
+  }
+  function accountShape(p,g,u) {
+   return p.keys().hasOnly(['gid','uid','net','active','rev','markSeq','markStep']) && p.gid==g && p.uid==u
+    && p.net is int && p.net>=-4000000000000000 && p.net<=4000000000000000 && p.active is bool
+    && p.rev is int && p.rev>=0 && p.rev<1000000000 && p.markSeq is int && p.markStep is int;
+  }
+  match /identities/{u} { allow create: if auth() && request.auth.uid==u && request.resource.data=={'uid':u}; allow get: if auth(); }
+  function changeMember(p,o,g) {
+   let path=/databases/$(database)/documents/groups/$(g)/accounts/$(p.target);
+   let before=exists(path)?get(path).data:null;
+   let after=getAfter(path).data;
+   return idle(o) && idle(p) && p.diff(o).affectedKeys().hasOnly(['rev','action','target'])
+    && (p.action=='JOIN' ? (request.auth.uid==o.admin && get(/databases/$(database)/documents/identities/$(p.target)).data.uid==p.target
+      && (before==null?after==zero(g,p.target):(!before.active && after.active && after.rev==before.rev+1 && after.diff(before).affectedKeys().hasOnly(['active','rev']))))
+     :(p.action=='LEAVE' && p.target==request.auth.uid && request.auth.uid!=o.admin && before.active && before.net==0
+      && !after.active && after.rev==before.rev+1 && after.diff(before).affectedKeys().hasOnly(['active','rev'])));
+  }
+  function headShape(p,o,g) {
+   return p.keys().hasOnly(['gid','kind','payer','payee','amount','date','participants','shares','rev','deleted','creator'])
+    && p.gid==g && p.kind in ['expense','settlement'] && p.payer is string && p.payee is string
+    && p.amount is int && p.amount>0 && p.amount<=1000000000000 && p.date is int && p.date>=0
+    && p.rev is int && p.rev==(o==null?1:o.rev+1) && p.deleted is bool && p.creator is string
+    && (o==null?(p.creator==request.auth.uid && !p.deleted):(o.gid==g && !o.deleted && p.kind==o.kind && p.creator==o.creator))
+    && (p.kind=='expense' ? (p.payee=='' && p.participants is list && p.participants.size()>0 && p.participants.size()<=8
+      && p.participants.toSet().size()==p.participants.size() && p.shares is map && p.shares.keys().toSet()==p.participants.toSet()
+      && (!p.deleted || (o!=null && p.diff(o).affectedKeys().hasOnly(['deleted','rev']))))
+     :(p.payer!=p.payee && !p.deleted && p.participants==[] && p.shares=={}
+      && (o==null?request.auth.uid in [p.payer,p.payee]:p.diff(o).affectedKeys().hasOnly(['amount','date','rev']))));
+  }
+  function spending(r) { return r!=null && r.kind=='expense' && !r.deleted?r.amount:0; }
+  function paid(r) { return r!=null && r.kind=='settlement'?r.amount:0; }
+  function capacity(g,p,b) {
+   let payer=acct(g,p.payer);
+   let payee=acct(g,p.payee);
+   let old=b==null?0:b.amount;
+   let debt=payer.net-old;
+   let credit=payee.net+old;
+   let cap=debt<0 && credit>0?(-debt<credit?-debt:credit):0;
+   return p.amount<=(old>cap?old:cap);
+  }
+  function checks(r) { return r.kind=='expense' && !r.deleted?r.participants.size()+1:0; }
+  // Namespace owns the record; the immutable pending command exclusively claims it
+  // within this group. Recheck the actual captured head before every transition.
+  function owned(g,o) {
+   let path=/databases/$(database)/documents/groups/$(g)/records/$(o.op.id);
+   return o.op.after.gid==g && (o.op.before==null?!exists(path):(exists(path) && get(path).data==o.op.before));
+  }
+  function begin(p,o,g) {
+   let x=p.op;
+   let path=/databases/$(database)/documents/groups/$(g)/records/$(x.id);
+   let before=exists(path)?get(path).data:null;
+   return idle(o) && p.action=='BEGIN' && p.target=='' && p.cursor==0 && p.checked==0
+    && p.total==o.total && p.gross==o.gross && x.keys().hasOnly(['id','seq','actor','before','after'])
+    && uuid(x.id) && x.seq==p.rev && x.actor==request.auth.uid && x.before==before
+    && headShape(x.after,before,g) && p.phase==(checks(x.after)==0?'APPLY':'PREPARE')
+    && o.total-spending(before)+spending(x.after)>=0 && o.total-spending(before)+spending(x.after)<=1000000000000000
+    && o.gross-paid(before)+paid(x.after)>=0 && o.gross-paid(before)+paid(x.after)<=1000000000000000
+    && (x.after.kind!='settlement' || capacity(g,x.after,before));
+  }
+  function eligible(g,u,b,payer) { return acct(g,u).active || (b!=null && (payer?u==b.payer:u in b.participants)); }
+  function checkParticipant(g,x,i) {
+   let r=x.after;
+   let n=r.participants.size();
+   let u=r.participants[i];
+   return u is string && (i==0 || r.participants[i-1]<u) && eligible(g,u,x.before,false)
+    && r.shares[u] is int && r.shares[u]==int(r.amount / n)+(i<r.amount % n?1:0);
+  }
+  function prepare(p,o,g) {
+   return o.phase=='PREPARE' && owned(g,o) && o.checked<checks(o.op.after) && p.checked==o.checked+1
+    && p.phase==(p.checked==checks(o.op.after)?'APPLY':'PREPARE')
+    && p.diff(o).affectedKeys().hasOnly(['rev','action','checked','phase'])
+    && (o.checked==0?eligible(g,o.op.after.payer,o.op.before,true):checkParticipant(g,o.op,o.checked-1));
+  }
+  function components(r) { return r==null || r.deleted?0:(r.kind=='expense'?r.participants.size()+1:2); }
+  function component(r,i,s) {
+   return r.kind=='expense' ? (i==0?{'uid':r.payer,'delta':s*r.amount}:{'uid':r.participants[i-1],'delta':-s*r.shares[r.participants[i-1]]})
+    :(i==0?{'uid':r.payer,'delta':s*r.amount}:{'uid':r.payee,'delta':-s*r.amount});
+  }
+  function next(o) { return o.cursor<components(o.op.before)?component(o.op.before,o.cursor,-1):component(o.op.after,o.cursor-components(o.op.before),1); }
+  function post(p,o,g) {
+   let t=next(o);
+   let a=getAfter(/databases/$(database)/documents/groups/$(g)/accounts/$(t.uid)).data;
+   return o.phase=='APPLY' && owned(g,o) && p.phase=='APPLY' && o.cursor<components(o.op.before)+components(o.op.after)
+    && p.cursor==o.cursor+1 && p.diff(o).affectedKeys().hasOnly(['rev','action','cursor','diag','expr'])
+    && a.markSeq==o.op.seq && a.markStep==o.cursor;
+  }
+  function finish(p,o,g) {
+   return o.phase=='APPLY' && owned(g,o) && o.cursor==components(o.op.before)+components(o.op.after) && idle(p) && p.target==''
+    && p.diff(o).affectedKeys().hasOnly(['rev','action','phase','op','checked','cursor','total','gross'])
+    && p.total==o.total-spending(o.op.before)+spending(o.op.after) && p.gross==o.gross-paid(o.op.before)+paid(o.op.after)
+    && getAfter(/databases/$(database)/documents/groups/$(g)/records/$(o.op.id)).data==o.op.after;
+  }
+  function abort(p,o,g) { return o.phase=='PREPARE' && owned(g,o) && idle(p) && p.target=='' && p.diff(o).affectedKeys().hasOnly(['rev','action','phase','op','checked','cursor']); }
+  // Extra known-existing reads are POC-only access-budget instrumentation, not product fields.
+  function padAt(n,i) { return n<=i || get(/databases/$(database)/documents/probes/$(i)).data.ok; }
+  function pad(n) { return padAt(n,0) && padAt(n,1) && padAt(n,2) && padAt(n,3) && padAt(n,4) && padAt(n,5) && padAt(n,6) && padAt(n,7) && padAt(n,8) && padAt(n,9) && padAt(n,10); }
+  function exprChunk(p,k) { return p.expr<k || (p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0 && p.rev>=0); }
+  function exprPad(p) { return exprChunk(p,1) && exprChunk(p,2) && exprChunk(p,3) && exprChunk(p,4) && exprChunk(p,5) && exprChunk(p,6) && exprChunk(p,7) && exprChunk(p,8) && exprChunk(p,9) && exprChunk(p,10) && exprChunk(p,11) && exprChunk(p,12) && exprChunk(p,13) && exprChunk(p,14) && exprChunk(p,15) && exprChunk(p,16); }
+  match /groups/{g} {
+   allow get: if auth() && current(g);
+   allow create: if auth() && uuid(g) && shape(request.resource.data) && idle(request.resource.data)
+    && request.resource.data=={'admin':request.auth.uid,'creator':request.auth.uid,'rev':0,'phase':'IDLE','action':'INIT','target':'','total':0,'gross':0,'op':null,'checked':0,'cursor':0,'diag':0,'expr':0}
+    && getAfter(/databases/$(database)/documents/groups/$(g)/accounts/$(request.auth.uid)).data==zero(g,request.auth.uid);
+   allow update: if auth() && current(g) && shape(request.resource.data) && request.resource.data.rev==resource.data.rev+1
+    && request.resource.data.admin==resource.data.admin && request.resource.data.creator==resource.data.creator
+    && (request.resource.data.action in ['JOIN','LEAVE']?changeMember(request.resource.data,resource.data,g)
+      :request.resource.data.action=='BEGIN'?begin(request.resource.data,resource.data,g)
+      :request.resource.data.action=='CHECK'?prepare(request.resource.data,resource.data,g)
+      :request.resource.data.action=='POST'?post(request.resource.data,resource.data,g) && pad(request.resource.data.diag) && exprPad(request.resource.data)
+      :request.resource.data.action=='FINISH'?finish(request.resource.data,resource.data,g)
+      :request.resource.data.action=='ABORT' && abort(request.resource.data,resource.data,g));
+  }
+  function memberPair(p,o,g,u) {
+   let b=get(/databases/$(database)/documents/groups/$(g)).data;
+   let a=getAfter(/databases/$(database)/documents/groups/$(g)).data;
+   return idle(b) && idle(a) && a.rev==b.rev+1 && a.target==u
+    && (a.action=='JOIN' ? (request.auth.uid==b.admin && p.active && (o==null?p==zero(g,u):!o.active && p.rev==o.rev+1 && p.diff(o).affectedKeys().hasOnly(['active','rev'])))
+     :(a.action=='LEAVE' && request.auth.uid==u && u!=b.admin && o!=null && o.active && o.net==0 && !p.active
+       && p.rev==o.rev+1 && p.diff(o).affectedKeys().hasOnly(['active','rev'])));
+  }
+  function postingAccount(p,o,g,u) {
+   let b=get(/databases/$(database)/documents/groups/$(g)).data;
+   let a=getAfter(/databases/$(database)/documents/groups/$(g)).data;
+   let t=next(b);
+   return b.phase=='APPLY' && owned(g,b) && a.action=='POST' && a.rev==b.rev+1 && a.cursor==b.cursor+1 && a.op==b.op
+    && t.uid==u && p.net==o.net+t.delta && p.rev==o.rev+1 && p.markSeq==b.op.seq && p.markStep==b.cursor
+    && p.diff(o).affectedKeys().hasOnly(['net','rev','markSeq','markStep']);
+  }
+  match /groups/{g}/accounts/{u} {
+   allow get: if auth() && (request.auth.uid==u || current(g));
+   allow create: if auth() && accountShape(request.resource.data,g,u)
+    && ((!exists(/databases/$(database)/documents/groups/$(g)) && request.auth.uid==u
+      && getAfter(/databases/$(database)/documents/groups/$(g)).data.creator==u && request.resource.data==zero(g,u))
+      || (exists(/databases/$(database)/documents/groups/$(g)) && memberPair(request.resource.data,null,g,u)));
+   allow update: if auth() && accountShape(request.resource.data,g,u)
+    && (getAfter(/databases/$(database)/documents/groups/$(g)).data.action=='POST'?postingAccount(request.resource.data,resource.data,g,u):memberPair(request.resource.data,resource.data,g,u));
+  }
+  function publish(g,id,p) {
+   let b=get(/databases/$(database)/documents/groups/$(g)).data;
+   let a=getAfter(/databases/$(database)/documents/groups/$(g)).data;
+   return p.gid==g && b.phase=='APPLY' && b.op.id==id && owned(g,b)
+    && b.cursor==components(b.op.before)+components(b.op.after)
+    && a.action=='FINISH' && idle(a) && a.rev==b.rev+1 && p==b.op.after;
+  }
+  match /groups/{g}/records/{id} {
+   allow get: if auth() && current(g);
+   allow create: if auth() && request.resource.data.rev==1
+    && get(/databases/$(database)/documents/groups/$(g)).data.op.before==null
+    && publish(g,id,request.resource.data);
+   allow update: if auth() && resource.data.gid==g && !resource.data.deleted
+    && request.resource.data.gid==resource.data.gid && request.resource.data.rev==resource.data.rev+1
+    && request.resource.data.creator==resource.data.creator && request.resource.data.kind==resource.data.kind
+    && get(/databases/$(database)/documents/groups/$(g)).data.op.before==resource.data
+    && publish(g,id,request.resource.data);
+   allow delete: if false;
+  }
+  function touches(n,base,i) { return n<=i || get(/databases/$(database)/documents/probes/$(base+i)).data.ok; }
+  function access(n,base) { return touches(n,base,0) && touches(n,base,1) && touches(n,base,2) && touches(n,base,3) && touches(n,base,4) && touches(n,base,5) && touches(n,base,6) && touches(n,base,7) && touches(n,base,8) && touches(n,base,9) && touches(n,base,10); }
+  match /access/{id} { allow create: if auth() && access(request.resource.data.n,request.resource.data.base); }
+  match /{path=**} { allow read,write: if false; }
+ }
+}

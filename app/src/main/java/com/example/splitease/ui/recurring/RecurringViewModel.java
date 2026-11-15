@@ -20,9 +20,21 @@ public final class RecurringViewModel extends AndroidViewModel {
  private final Executor main=new Handler(Looper.getMainLooper())::post;
  private final MutableLiveData<State> state=new MutableLiveData<>();
  private ObservableQuery.Subscription sessions,watch;
+ private AuthService auth;
+ private RecurringBillRepository repository;
+ private boolean cloud;
+ private int refreshVersion;
  private String actor,billId,savedId;private RecurringSnapshot data;
  private int epoch,error;private boolean loading=true,busy,editing;
- public RecurringViewModel(Application application,SavedStateHandle saved) {super(application);app=(SplitEaseApplication)application;this.saved=saved;emit();}
+ public RecurringViewModel(Application application,SavedStateHandle saved) {super(application);app=(SplitEaseApplication)application;this.saved=saved;auth=app.auth();repository=app.recurringBills();emit();}
+ public void dependencies(com.example.splitease.ui.groups.GroupDependencies deps) {
+  if(deps!=null){cloud=true;auth=deps.auth;repository=Objects.requireNonNull(deps.recurring);}
+ }
+ public boolean cloud(){return cloud;}
+ private Map<String,Long> split(long amount,Collection<String> ids) {
+  return cloud?Rules.equalSplitIdentities(amount,ids):Rules.equalSplit(amount,ids);
+ }
+ private void refreshReminders(){if(!cloud)app.reminders().refresh(true);}
  public void configure(String billId,boolean create) {this.billId=billId;editing=create||Boolean.TRUE.equals(saved.get("editing"));}
  public LiveData<State> state() {return state;}
  private void emit() {state.setValue(new State(this));}
@@ -40,11 +52,11 @@ public final class RecurringViewModel extends AndroidViewModel {
  public String groupName(String id) {if(data!=null) for(GroupDetails g:data.groups) if(g.group.id.equals(id)) return g.group.name;return id;}
  public void start() {
   if(sessions!=null) return;
-  sessions=app.auth().sessions().subscribe(main,new ObservableQuery.Observer<SessionState>() {
+  sessions=auth.sessions().subscribe(main,new ObservableQuery.Observer<SessionState>() {
    @Override public void onChanged(SessionState s) {
-    String id=s.status==SessionState.Status.SIGNED_IN?s.user.id:null;
+    String id=s.status==SessionState.Status.SIGNED_IN&&s.backend==(cloud?SessionState.Backend.FIREBASE:SessionState.Backend.LOCAL)?s.user.id:null;
     if(!Objects.equals(actor,id)) {epoch++;data=null;busy=false;error=0;savedId=null;
-     if(!Objects.equals(id,saved.get("owner"))) {for(String key:Arrays.asList("title","amount","group","handler","day","lead","participants","active","loaded","filter","editing")) saved.remove(key);}
+     if(!Objects.equals(id,saved.get("owner"))) {for(String key:Arrays.asList("title","amount","group","handler","day","lead","participants","active","loaded","filter","editing","revision")) saved.remove(key);}
      actor=id;saved.set("owner",id);
     }
     refresh();
@@ -52,19 +64,19 @@ public final class RecurringViewModel extends AndroidViewModel {
    @Override public void onError(Exception failure) {data=null;loading=false;error=R.string.bill_load_error;emit();}
   });
  }
- public void stop() {if(sessions!=null)sessions.close();sessions=null;if(watch!=null)watch.close();watch=null;}
+ public void stop() {refreshVersion++;if(sessions!=null)sessions.close();sessions=null;if(watch!=null)watch.close();watch=null;}
  public void refresh() {
   if(watch!=null)watch.close();watch=null;loading=actor!=null;emit();if(actor==null)return;
-  int token=epoch;
-  app.recurringBills().ensureCycles(actor,System.currentTimeMillis(),main,new RepositoryCallback<Integer>() {
-   @Override public void onSuccess(Integer count) {if(token!=epoch)return;subscribe(token);}
-   @Override public void onError(Exception failure) {if(token==epoch){loading=false;error=R.string.bill_load_error;emit();}}
+  int token=epoch, version=++refreshVersion;
+  repository.ensureCycles(actor,System.currentTimeMillis(),main,new RepositoryCallback<Integer>() {
+   @Override public void onSuccess(Integer count) {if(token!=epoch||version!=refreshVersion)return;subscribe(token);}
+   @Override public void onError(Exception failure) {if(token==epoch&&version==refreshVersion){loading=false;error=R.string.bill_load_error;emit();}}
   });
  }
  private void subscribe(int token) {
   if(sessions==null)return;
   if(watch!=null)watch.close();
-  watch=app.recurringBills().observeRecurring(actor).subscribe(main,new ObservableQuery.Observer<RecurringSnapshot>() {
+  watch=repository.observeRecurring(actor,billId).subscribe(main,new ObservableQuery.Observer<RecurringSnapshot>() {
    @Override public void onChanged(RecurringSnapshot value) {
     if(token!=epoch)return;data=value;loading=false;error=0;
     if(billId!=null && bill()==null) error=R.string.bill_unavailable;
@@ -76,10 +88,10 @@ public final class RecurringViewModel extends AndroidViewModel {
    @Override public void onError(Exception failure){if(token==epoch){data=null;loading=false;error=R.string.bill_load_error;emit();}}
   });
  }
- private void loadDraft() {RecurringBill b=bill();if(b==null)return;text("title",b.title);text("amount",ExpenseAmounts.input(b.amountPaise));text("group",b.groupId);text("handler",b.handlerId==null?"":b.handlerId);text("day",String.valueOf(b.dueDay));text("lead",String.valueOf(b.reminderLeadDays));active(b.active);saved.set("participants",new ArrayList<>(b.participantIds));text("loaded",billId);}
+ private void loadDraft() {RecurringBill b=bill();if(b==null)return;text("title",b.title);text("amount",ExpenseAmounts.input(b.amountPaise));text("group",b.groupId);text("handler",b.handlerId==null?"":b.handlerId);text("day",String.valueOf(b.dueDay));text("lead",String.valueOf(b.reminderLeadDays));active(b.active);saved.set("participants",new ArrayList<>(b.participantIds));text("loaded",billId);saved.set("revision",b.revision);}
  public void edit() {if(!busy && bill()!=null){loadDraft();editing=true;saved.set("editing",true);emit();}}
  public void consumeSaved() {savedId=null;}
- public String preview() {try {Map<String,Long> shares=Rules.equalSplit(ExpenseAmounts.parse(text("amount")),selected());StringBuilder result=new StringBuilder();for(Map.Entry<String,Long> share:shares.entrySet()) result.append(name(share.getKey())).append(": ").append(com.example.splitease.util.InrFormatter.format(share.getValue())).append('\n');return result.toString().trim();}catch(IllegalArgumentException|ArithmeticException failure){return getApplication().getString(R.string.bill_share_hint);}}
+ public String preview() {try {Map<String,Long> shares=split(ExpenseAmounts.parse(text("amount")),selected());StringBuilder result=new StringBuilder();for(Map.Entry<String,Long> share:shares.entrySet()) result.append(name(share.getKey())).append(": ").append(com.example.splitease.util.InrFormatter.format(share.getValue())).append('\n');return result.toString().trim();}catch(IllegalArgumentException|ArithmeticException failure){return getApplication().getString(R.string.bill_share_hint);}}
  public void changed() {emit();}
  public void save() {
   if(actor==null || busy || group()==null)return;
@@ -87,18 +99,18 @@ public final class RecurringViewModel extends AndroidViewModel {
   try {
    int day=Integer.parseInt(text("day")),lead=Integer.parseInt(text("lead"));Rules.dueDate(2026,1,day);if(lead<0||lead>31)throw new IllegalArgumentException();
    if(text("handler").isEmpty())throw new IllegalArgumentException();
-   value=new RecurringBill(billId==null?UUID.randomUUID().toString():billId,text("group"),Rules.text(text("title")),ExpenseAmounts.parse(text("amount")),day,selected(),text("handler"),lead,active());Rules.equalSplit(value.amountPaise,value.participantIds);
+   value=new RecurringBill(billId==null?UUID.randomUUID().toString():billId,text("group"),Rules.text(text("title")),ExpenseAmounts.parse(text("amount")),day,selected(),text("handler"),lead,active(),billId==null?0:Optional.ofNullable(saved.<Long>get("revision")).orElse(0L));split(value.amountPaise,value.participantIds);
   }catch(IllegalArgumentException|ArithmeticException failure){error=R.string.bill_invalid;emit();return;}
   int token=epoch;busy=true;error=0;emit();
-  app.recurringBills().saveBill(actor,value,main,new RepositoryCallback<RecurringBill>() {
-   @Override public void onSuccess(RecurringBill result){if(token==epoch){busy=false;editing=false;saved.set("editing",false);billId=result.id;loadDraft();savedId=result.id;app.reminders().refresh(true);emit();}}
+  repository.saveBill(actor,value,main,new RepositoryCallback<RecurringBill>() {
+   @Override public void onSuccess(RecurringBill result){if(token==epoch){busy=false;editing=false;saved.set("editing",false);billId=result.id;loadDraft();savedId=result.id;saved.set("revision",result.revision);refreshReminders();emit();if(cloud&&sessions!=null)refresh();}}
    @Override public void onError(Exception failure){if(token==epoch){busy=false;error=R.string.bill_save_error;emit();}}
   });
  }
  public void paid(String cycle,String participant,boolean paid) {
   if(actor==null||busy)return;int token=epoch;busy=true;error=0;emit();
-  app.recurringBills().setContributionPaid(actor,cycle,participant,paid,main,new RepositoryCallback<Boolean>() {
-   @Override public void onSuccess(Boolean result){if(token==epoch){busy=false;app.reminders().refresh(true);emit();}}
+  repository.setContributionPaid(actor,cycle,participant,paid,main,new RepositoryCallback<Boolean>() {
+   @Override public void onSuccess(Boolean result){if(token==epoch){busy=false;refreshReminders();emit();}}
    @Override public void onError(Exception failure){if(token==epoch){busy=false;error=R.string.bill_save_error;emit();}}
   });
  }

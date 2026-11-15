@@ -5,6 +5,7 @@ import androidx.fragment.app.Fragment;
 import androidx.navigation.fragment.NavHostFragment;
 import com.example.splitease.R;
 import com.example.splitease.data.firebase.FirestoreGroupRepository;
+import com.example.splitease.data.firebase.FirestoreRecurringRepository;
 import com.example.splitease.ui.groups.GroupDependencies;
 import com.google.firebase.firestore.FirebaseFirestore;
 
@@ -19,7 +20,7 @@ public final class CloudGroups {
             com.example.splitease.data.firebase.FirestoreExpenseRepository expenses=new com.example.splitease.data.firebase.FirestoreExpenseRepository(db,auth);
             FirestoreGroupRepository groups=new FirestoreGroupRepository(db,auth,FirebaseAuthSandbox.profiles(context));groups.attachExpenses(expenses);
             com.example.splitease.data.firebase.FirestoreSettlementRepository settlements=new com.example.splitease.data.firebase.FirestoreSettlementRepository(db,auth);groups.attachAccounting(settlements);
-            owner=new GroupDependencies(auth,groups,expenses,settlements);
+            owner=new GroupDependencies(auth,groups,expenses,settlements,new FirestoreRecurringRepository(db,auth,groups));
         }return owner;
     }
     public static GroupDependencies dependencies(Fragment fragment){return NavHostFragment.findNavController(fragment).getGraph().getId()==R.id.cloud_groups_graph?owner(fragment.requireContext()):null;}

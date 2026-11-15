@@ -219,6 +219,86 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amountPaise','settlementDate','revision','financialVersion','updatedAt']);
       allow delete: if false;
     }
+    // Recurring is a separate demo-only document tree. No accounting writes or fences.
+    function recurringDemo() {
+      return signedIn() && request.auth.token.aud == 'demo-splitease-auth';
+    }
+    function recurringMonth() { return request.time.year() * 12 + request.time.month() - 1; }
+    function recurringBill(id) {
+      return get(/databases/$(database)/documents/recurringBills/$(id)).data;
+    }
+    function recurringAccess(groupId) { return recurringDemo() && expenseMember(groupId); }
+    function recurringTemplate(p) {
+      let ids = p.participants;
+      let n = ids.size();
+      let base = int(p.amountPaise / n);
+      let remainder = p.amountPaise % n;
+      let members = get(/databases/$(database)/documents/groups/$(p.groupId)).data.memberIds;
+      return p.keys().hasOnly(['groupId','title','amountPaise','handlerId','participants','shares',
+          'dueDay','reminderLeadDays','active','nextMonth','revision'])
+        && p.title is string && p.title.size() <= 200 && p.title.matches('(?s).*[^ \t\r\n].*')
+        && p.amountPaise is int && p.amountPaise > 0 && p.amountPaise <= 1000000000000
+        && p.dueDay is int && p.dueDay >= 1 && p.dueDay <= 31
+        && p.reminderLeadDays is int && p.reminderLeadDays >= 0 && p.reminderLeadDays <= 31
+        && p.active is bool && p.nextMonth is int && p.revision is int
+        && ids is list && n > 0 && n <= 8 && p.handlerId is string && p.handlerId in members
+        && members.toSet().hasAll(ids) && p.shares is map && p.shares.keys().toSet() == ids.toSet()
+        && expenseAt(ids,p.shares,n,base,remainder,0) && expenseAt(ids,p.shares,n,base,remainder,1)
+        && expenseAt(ids,p.shares,n,base,remainder,2) && expenseAt(ids,p.shares,n,base,remainder,3)
+        && expenseAt(ids,p.shares,n,base,remainder,4) && expenseAt(ids,p.shares,n,base,remainder,5)
+        && expenseAt(ids,p.shares,n,base,remainder,6) && expenseAt(ids,p.shares,n,base,remainder,7);
+    }
+    function recurringAdvance(id,p,b) {
+      let key = string(b.nextMonth);
+      let cyclePath = /databases/$(database)/documents/recurringBills/$(id)/cycles/$(key);
+      return b.active && b.nextMonth <= recurringMonth() && p.nextMonth is int
+        && p.nextMonth == b.nextMonth + 1 && p.diff(b).affectedKeys().hasOnly(['nextMonth'])
+        && !exists(cyclePath) && getAfter(cyclePath).data.month == b.nextMonth;
+    }
+    function recurringEdit(p,b) {
+      return p.groupId == b.groupId && p.revision == b.revision + 1
+        && (!b.active || b.nextMonth > recurringMonth())
+        && p.nextMonth == (!b.active && p.active && b.nextMonth < recurringMonth() ? recurringMonth() : b.nextMonth)
+        && recurringTemplate(p);
+    }
+    function recurringCycleCreate(id,key,p,b) {
+      let after = getAfter(/databases/$(database)/documents/recurringBills/$(id)).data;
+      let members = get(/databases/$(database)/documents/groups/$(b.groupId)).data.memberIds;
+      return b.active && b.nextMonth <= recurringMonth() && key == string(b.nextMonth)
+        && after.nextMonth == b.nextMonth + 1 && after.diff(b).affectedKeys().hasOnly(['nextMonth'])
+        && b.handlerId in members && members.toSet().hasAll(b.participants)
+        && p == {'month':b.nextMonth,'amountPaise':b.amountPaise,'handlerId':b.handlerId,
+                 'dueDay':b.dueDay,'participants':b.participants,'paid':[]}
+        && p.month is int && p.amountPaise is int && p.dueDay is int;
+    }
+    function recurringStatus(p,b) {
+      let before = b.paid.toSet();
+      let after = p.paid.toSet();
+      return p.diff(b).affectedKeys().hasOnly(['paid'])
+        && p.paid is list && p.paid.size() == after.size()
+        && b.participants.toSet().hasAll(after)
+        && before.difference(after).size() + after.difference(before).size() <= 1;
+    }
+    match /recurringBills/{id} {
+      allow get: if recurringDemo() && (!exists(/databases/$(database)/documents/recurringBills/$(id))
+        || expenseMember(resource.data.groupId));
+      allow list: if recurringAccess(resource.data.groupId);
+      allow create: if recurringAccess(request.resource.data.groupId)
+        && id.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+        && request.resource.data.revision == 1 && request.resource.data.nextMonth == recurringMonth()
+        && recurringTemplate(request.resource.data);
+      allow update: if recurringAccess(resource.data.groupId)
+        && (recurringAdvance(id,request.resource.data,resource.data) || recurringEdit(request.resource.data,resource.data));
+      allow delete: if false;
+      match /cycles/{key} {
+        allow read: if recurringAccess(recurringBill(id).groupId);
+        allow create: if recurringAccess(recurringBill(id).groupId)
+          && recurringCycleCreate(id,key,request.resource.data,recurringBill(id));
+        allow update: if recurringAccess(recurringBill(id).groupId)
+          && recurringStatus(request.resource.data,resource.data);
+        allow delete: if false;
+      }
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }

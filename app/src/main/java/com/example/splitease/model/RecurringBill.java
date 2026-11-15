@@ -13,8 +13,15 @@ public final class RecurringBill {
     public final String handlerId;
     public final int reminderLeadDays;
     public final boolean active;
+    public final long revision;
 
     public RecurringBill(String id, String groupId, String title, long amountPaise, int dueDay, List<String> participantIds, String handlerId, int reminderLeadDays, boolean active) {
+        this(id, groupId, title, amountPaise, dueDay, participantIds, handlerId, reminderLeadDays, active, 0);
+    }
+
+    public RecurringBill(String id, String groupId, String title, long amountPaise, int dueDay, List<String> participantIds,
+                         String handlerId, int reminderLeadDays, boolean active, long revision) {
+        this.revision = revision;
         this.id = id;
         this.groupId = groupId;
         this.title = title;

@@ -1,0 +1,7 @@
+__pycache__/
+*-debug.log
+results.json
+boundaries-results.json
+safety-results.json
+cost-results.json
+authorization-results.json

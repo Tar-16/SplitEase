@@ -20,10 +20,16 @@ public final class CloudGroupsFragment extends Fragment {
     @Override public void onViewCreated(@NonNull View view,Bundle state){
         identity=state==null?null:state.getString("cloud_owner");
         if(getChildFragmentManager().findFragmentById(R.id.cloud_group_host)==null){NavHostFragment host=NavHostFragment.create(R.navigation.cloud_groups_graph);getChildFragmentManager().beginTransaction().replace(R.id.cloud_group_host,host).setPrimaryNavigationFragment(host).commitNow();}
+        binding.cloudRecurring.setOnClickListener(v->{
+            NavHostFragment host=(NavHostFragment)getChildFragmentManager().findFragmentById(R.id.cloud_group_host);
+            if(host!=null)host.getNavController().navigate(R.id.recurring,null,
+                    new androidx.navigation.NavOptions.Builder().setLaunchSingleTop(true).setPopUpTo(R.id.groups,false).build());
+        });
         binding.cloudBack.setOnClickListener(v->NavHostFragment.findNavController(this).popBackStack());
         AuthViewModel model=new ViewModelProvider(this,new ViewModelProvider.Factory(){@NonNull @Override public <T extends ViewModel>T create(@NonNull Class<T> type){return type.cast(new AuthViewModel(requireActivity().getApplication(),CloudGroups.owner(requireContext()).auth));}}).get(AuthViewModel.class);
         model.session().observe(getViewLifecycleOwner(),session->{
             boolean ready=session.backend==SessionState.Backend.FIREBASE&&session.status==SessionState.Status.SIGNED_IN;
+            binding.cloudRecurring.setVisibility(ready?View.VISIBLE:View.GONE);
             binding.cloudGroupHost.setVisibility(ready?View.VISIBLE:View.INVISIBLE);binding.cloudGate.setVisibility(ready?View.GONE:View.VISIBLE);
             if(ready){if(!Objects.equals(identity,session.user.id)){NavHostFragment host=(NavHostFragment)getChildFragmentManager().findFragmentById(R.id.cloud_group_host);host.getNavController().setGraph(R.navigation.cloud_groups_graph);identity=session.user.id;}exit=false;}
             else{binding.cloudGate.setText(session.status==SessionState.Status.UNAVAILABLE?R.string.session_unavailable:R.string.restoring_session);if(session.status==SessionState.Status.SIGNED_OUT||session.status==SessionState.Status.PROFILE_REQUIRED)exit=true;}

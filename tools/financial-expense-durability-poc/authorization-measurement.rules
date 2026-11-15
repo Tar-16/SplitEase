@@ -1,0 +1,269 @@
+rules_version = '2';
+// EXPENSE-ONLY DISPOSABLE EMULATOR POC. Never deploy.
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function signedIn() { return request.auth!=null && request.auth.token.aud=='demo-splitease-expense-durability'; }
+    function owner(uid) { return signedIn() && request.auth.uid == uid; }
+    function validName(display, normalized) {
+      return display is string && normalized is string
+        && display.matches('[A-Za-z0-9_]{3,30}') && normalized == display.lower();
+    }
+    function validProfile(p, uid) {
+      return p.keys().hasAll(['uid','normalizedUsername','displayUsername','email','upiId','createdAt','updatedAt'])
+        && p.keys().hasOnly(['uid','normalizedUsername','displayUsername','email','upiId','createdAt','updatedAt'])
+        && p.uid == uid && validName(p.displayUsername,p.normalizedUsername)
+        && p.email is string && p.email == request.auth.token.email.lower()
+        && (p.upiId == null || (p.upiId is string && p.upiId.size() <= 100 && p.upiId.matches('[A-Za-z0-9._-]+@[A-Za-z0-9.-]+')))
+        && p.createdAt is timestamp && p.updatedAt == request.time;
+    }
+    function pairedRegistry(p, uid) {
+      let r = getAfter(/databases/$(database)/documents/usernames/$(p.normalizedUsername)).data;
+      let u = getAfter(/databases/$(database)/documents/publicIdentities/$(uid)).data;
+      return r.uid == uid && r.displayUsername == p.displayUsername
+        && u.uid == uid && u.normalizedUsername == p.normalizedUsername && u.displayUsername == p.displayUsername;
+    }
+    match /profiles/{uid} {
+      allow get: if owner(uid);
+      allow create: if owner(uid) && validProfile(request.resource.data,uid)
+        && request.resource.data.createdAt == request.time && pairedRegistry(request.resource.data,uid);
+      allow update: if owner(uid) && validProfile(request.resource.data,uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayUsername','upiId','updatedAt'])
+        && pairedRegistry(request.resource.data,uid);
+      allow list, delete: if false;
+    }
+    match /usernames/{name} {
+      // Exact key lookup only; no email, UPI or private metadata in this document.
+      allow get: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasAll(['uid','displayUsername'])
+        && request.resource.data.keys().hasOnly(['uid','displayUsername'])
+        && request.resource.data.uid == request.auth.uid
+        && validName(request.resource.data.displayUsername,name)
+        && (!exists(/databases/$(database)/documents/usernames/$(name)) || resource.data.uid == request.auth.uid)
+        && getAfter(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.normalizedUsername == name
+        && getAfter(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.displayUsername == request.resource.data.displayUsername;
+      allow list, delete: if false;
+    }
+    match /publicIdentities/{uid} {
+      allow get: if signedIn();
+      allow create, update: if owner(uid)
+        && request.resource.data.keys().hasAll(['uid','normalizedUsername','displayUsername'])
+        && request.resource.data.keys().hasOnly(['uid','normalizedUsername','displayUsername'])
+        && request.resource.data.uid == uid
+        && validName(request.resource.data.displayUsername,request.resource.data.normalizedUsername)
+        && getAfter(/databases/$(database)/documents/profiles/$(uid)).data.normalizedUsername == request.resource.data.normalizedUsername
+        && getAfter(/databases/$(database)/documents/profiles/$(uid)).data.displayUsername == request.resource.data.displayUsername;
+      allow list, delete: if false;
+    }
+// Profile/username/public-identity rules above are copied unchanged except the demo auth gate.
+function uuid(id) { return id is string && id.matches('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'); }
+function account(g,u) { return get(/databases/$(database)/documents/groups/$(g)/accounts/$(u)).data; }
+function member(g) {
+ let a=account(g,request.auth.uid);
+ let m=get(/databases/$(database)/documents/groups/$(g)).data;
+ let profile=get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data;
+ let identity=get(/databases/$(database)/documents/publicIdentities/$(request.auth.uid)).data;
+ return signedIn() && a.status=='ACTIVE' && a.uid==request.auth.uid && a.groupId==g
+  && m.schemaVersion==3 && m.type in ['FLAT','TRIP']
+  && profile.uid==request.auth.uid && identity.uid==request.auth.uid
+  && identity.normalizedUsername==a.normalizedUsername;
+}
+function control(g) { return get(/databases/$(database)/documents/groups/$(g)/ledger/control).data; }
+function op(g,id) { return get(/databases/$(database)/documents/groups/$(g)/operations/$(id)).data; }
+function zero(g,u,n) { return {'groupId':g,'uid':u,'username':n.displayUsername,'normalizedUsername':n.normalizedUsername,'status':'ACTIVE','joinedAt':request.time,'leftAt':null,'netPaise':0,'revision':0,'lastOperationId':'','lastComponent':-1}; }
+function initial(g,n) { return {'groupId':g,'controlRevision':0,'accountingRevision':0,'phase':'IDLE','action':'INIT','activeOperationId':'','target':'','checked':0,'cursor':0,'totalExpensesPaise':0,'currentMemberCount':n,'updatedAt':request.time,'readPad':0,'exprPad':0}; }
+function empty(c) { return c.phase=='IDLE' && c.activeOperationId=='' && c.checked==0 && c.cursor==0; }
+function initAt(g,p,i) {
+ return p.initialMemberIds.size()<=i || (p.initialMemberIds[i] is string && (i==0 || p.initialMemberIds[i-1]<p.initialMemberIds[i])
+  && getAfter(/databases/$(database)/documents/groups/$(g)/accounts/$(p.initialMemberIds[i])).data.netPaise==0);
+}
+match /groups/{g} {
+ allow get: if member(g);
+ allow create: if signedIn() && uuid(g)
+  && request.resource.data.keys().hasOnly(['schemaVersion','name','type','creatorId','adminId','createdAt','updatedAt','revision','initialMemberIds'])
+  && request.resource.data.schemaVersion==3 && request.resource.data.creatorId==request.auth.uid && request.resource.data.adminId==request.auth.uid
+  && request.resource.data.name is string && request.resource.data.name.size()>0 && request.resource.data.name.size()<=100 && request.resource.data.type in ['FLAT','TRIP']
+  && request.resource.data.createdAt==request.time && request.resource.data.updatedAt==request.time && request.resource.data.revision==1
+  && request.resource.data.initialMemberIds is list && request.resource.data.initialMemberIds.size()>0 && request.resource.data.initialMemberIds.size()<=8
+  && request.resource.data.initialMemberIds.toSet().size()==request.resource.data.initialMemberIds.size() && request.auth.uid in request.resource.data.initialMemberIds
+  && initAt(g,request.resource.data,0) && initAt(g,request.resource.data,1) && initAt(g,request.resource.data,2) && initAt(g,request.resource.data,3)
+  && initAt(g,request.resource.data,4) && initAt(g,request.resource.data,5) && initAt(g,request.resource.data,6) && initAt(g,request.resource.data,7)
+  && getAfter(/databases/$(database)/documents/groups/$(g)/ledger/control).data==initial(g,request.resource.data.initialMemberIds.size());
+}
+function controlShape(p,g) {
+ return p.keys().hasOnly(['groupId','controlRevision','accountingRevision','phase','action','activeOperationId','target','checked','cursor','totalExpensesPaise','currentMemberCount','updatedAt','readPad','exprPad'])
+  && p.groupId==g && p.controlRevision is int && p.controlRevision>=0 && p.controlRevision<=999999999
+  && p.accountingRevision is int && p.accountingRevision>=0 && p.accountingRevision<=999999999
+  && p.phase in ['IDLE','PREPARE','APPLY'] && p.checked is int && p.checked>=0 && p.checked<=18 && p.cursor is int && p.cursor>=0 && p.cursor<=9
+  && p.totalExpensesPaise is int && p.totalExpensesPaise>=0 && p.totalExpensesPaise<=1000000000000000
+  && p.currentMemberCount is int && p.currentMemberCount>0 && p.currentMemberCount<=999999999 && p.updatedAt==request.time
+  && p.readPad is int && p.readPad>=0 && p.readPad<=11 && p.exprPad is int && p.exprPad>=0 && p.exprPad<=16;
+}
+function payload(p,g,r) {
+ return p.keys().hasOnly(['groupId','recordId','kind','revision','creatorId','payerId','amountPaise','occurredAtMillis','title','description','category','participantIds','sharesPaise','deleted'])
+  && p.groupId==g && p.recordId==r && p.kind=='expense' && p.revision==1 && p.creatorId==request.auth.uid && p.deleted==false
+  && p.payerId is string && p.amountPaise is int && p.amountPaise>0 && p.amountPaise<=1000000000000
+  && p.occurredAtMillis is int && p.occurredAtMillis>=0 && p.title is string && p.title.size()>0 && p.title.size()<=200 && p.title.matches('(?s).*[^ \\t\\r\\n].*')
+  && p.description is string && p.description.size()<=2000 && p.category in ['Food','Travel','Rent','Bills','Other']
+  && p.participantIds is list && p.participantIds.size()>0 && p.participantIds.size()<=8 && p.participantIds.toSet().size()==p.participantIds.size()
+  && p.sharesPaise is map && p.sharesPaise.keys().toSet()==p.participantIds.toSet();
+}
+function count(x) { return x.after.participantIds.size()+1; }
+function owns(g,x) { return x.groupId==g && x.after.groupId==g && x.after.recordId==x.recordId && !exists(/databases/$(database)/documents/groups/$(g)/records/$(x.recordId)); }
+function pending(g,c,x) {
+ return x.status=='PENDING' && x.operationId==c.activeOperationId && x.acceptedRevision<=c.controlRevision && owns(g,x);
+}
+function begin(p,b,g) {
+ let path=/databases/$(database)/documents/groups/$(g)/operations/$(p.activeOperationId);
+ let x=getAfter(path).data;
+ let n=count(x);
+ return empty(b) && p.phase=='PREPARE' && uuid(p.activeOperationId) && !exists(path)
+  && p.target=='' && p.checked==0 && p.cursor==0 && p.accountingRevision==b.accountingRevision && p.currentMemberCount==b.currentMemberCount && p.totalExpensesPaise==b.totalExpensesPaise
+  && x.operationId==p.activeOperationId && x.groupId==g && x.status=='PENDING' && x.actorId==request.auth.uid && uuid(x.recordId)
+  && x.expectedRevision==0 && x.before==null && x.acceptedRevision==p.controlRevision && payload(x.after,g,x.recordId) && owns(g,x)
+  && p.controlRevision+3*n+1<=999999999 && b.accountingRevision<999999999 && b.totalExpensesPaise+x.after.amountPaise<=1000000000000000;
+}
+function target(x,i) { return i==0?x.after.payerId:x.after.participantIds[i-1]; }
+function delta(x,i) { return i==0?x.after.amountPaise:-x.after.sharesPaise[x.after.participantIds[i-1]]; }
+function shareCheck(g,x,i) {
+ let n=x.after.participantIds.size();
+ let u=x.after.participantIds[i];
+ return u is string && (i==0 || x.after.participantIds[i-1]<u) && account(g,u).status=='ACTIVE'
+  && x.after.sharesPaise[u] is int && x.after.sharesPaise[u]==int(x.after.amountPaise / n)+(i<x.after.amountPaise % n?1:0);
+}
+function resourceCheck(g,x,i) {
+ let u=target(x,i);
+ let a=account(g,u);
+ let times=(u==x.after.payerId?1:0)+(u in x.after.participantIds?1:0);
+ let magnitude=a.netPaise<0?-a.netPaise:a.netPaise;
+ return a.status=='ACTIVE' && a.revision+times<=999999999 && magnitude+times*x.after.amountPaise<=4000000000000000;
+}
+function prepare(p,b,g) {
+ let x=op(g,b.activeOperationId);
+ let n=count(x);
+ return b.phase=='PREPARE' && pending(g,b,x) && b.checked<2*n && p.checked==b.checked+1
+  && p.phase==(p.checked==2*n?'APPLY':'PREPARE')
+  && p.diff(b).affectedKeys().hasOnly(['controlRevision','action','checked','phase','updatedAt','readPad','exprPad'])
+  && (b.checked<n?(b.checked==0?account(g,x.after.payerId).status=='ACTIVE':shareCheck(g,x,b.checked-1)):resourceCheck(g,x,b.checked-n));
+}
+function post(p,b,g) {
+ let x=op(g,b.activeOperationId);
+ let a=getAfter(/databases/$(database)/documents/groups/$(g)/accounts/$(target(x,b.cursor))).data;
+ return b.phase=='APPLY' && pending(g,b,x) && b.checked==2*count(x) && b.cursor<count(x) && p.cursor==b.cursor+1
+  && p.diff(b).affectedKeys().hasOnly(['controlRevision','action','cursor','updatedAt','readPad','exprPad'])
+  && a.lastOperationId==b.activeOperationId && a.lastComponent==b.cursor;
+}
+function headMatches(h,x,p) {
+ return h.diff(x.after).affectedKeys().hasOnly(['createdAt','updatedAt','lastOperationId','accountingRevision'])
+  && h.createdAt==x.createdAt && h.updatedAt==request.time && h.lastOperationId==x.operationId && h.accountingRevision==p.accountingRevision;
+}
+function finish(p,b,g) {
+ let x=op(g,b.activeOperationId);
+ let receipt=getAfter(/databases/$(database)/documents/groups/$(g)/operations/$(b.activeOperationId)).data;
+ let head=getAfter(/databases/$(database)/documents/groups/$(g)/records/$(x.recordId)).data;
+ return b.phase=='APPLY' && pending(g,b,x) && b.checked==2*count(x) && b.cursor==count(x) && empty(p)
+  && p.target=='' && p.currentMemberCount==b.currentMemberCount && p.accountingRevision==b.accountingRevision+1
+  && p.totalExpensesPaise==b.totalExpensesPaise+x.after.amountPaise && headMatches(head,x,p)
+  && receipt.status=='COMMITTED' && receipt.resultRevision==1 && receipt.finishedAt==request.time;
+}
+function cancel(p,b,g) {
+ let x=op(g,b.activeOperationId);
+ let receipt=getAfter(/databases/$(database)/documents/groups/$(g)/operations/$(b.activeOperationId)).data;
+ return b.phase=='PREPARE' && pending(g,b,x) && empty(p) && p.target=='' && p.totalExpensesPaise==b.totalExpensesPaise
+  && p.currentMemberCount==b.currentMemberCount && p.accountingRevision==b.accountingRevision
+  && receipt.status=='CANCELLED' && receipt.resultRevision==0 && receipt.finishedAt==request.time;
+}
+function join(p,b,g) {
+ let a=getAfter(/databases/$(database)/documents/groups/$(g)/accounts/$(p.target)).data;
+ return empty(b) && empty(p) && get(/databases/$(database)/documents/groups/$(g)).data.adminId==request.auth.uid
+  && !exists(/databases/$(database)/documents/groups/$(g)/accounts/$(p.target))
+  && p.diff(b).affectedKeys().hasOnly(['controlRevision','action','target','currentMemberCount','updatedAt','readPad','exprPad'])
+  && p.currentMemberCount==b.currentMemberCount+1 && a.netPaise==0 && a.status=='ACTIVE';
+}
+// POC-only finite headroom instrumentation; never a product field/service.
+function padAt(n,i) { return n<=i || get(/databases/$(database)/documents/budgetProbes/$(i)).data.ok; }
+function reads(n) { return padAt(n,0) && padAt(n,1) && padAt(n,2) && padAt(n,3) && padAt(n,4) && padAt(n,5) && padAt(n,6) && padAt(n,7) && padAt(n,8) && padAt(n,9) && padAt(n,10); }
+function chunk(p,k) { return p.exprPad<k || (p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0 && p.controlRevision>=0); }
+function expressions(p) { return chunk(p,1) && chunk(p,2) && chunk(p,3) && chunk(p,4) && chunk(p,5) && chunk(p,6) && chunk(p,7) && chunk(p,8) && chunk(p,9) && chunk(p,10) && chunk(p,11) && chunk(p,12) && chunk(p,13) && chunk(p,14) && chunk(p,15) && chunk(p,16); }
+// Bind document expressions once; zero diagnostic padding has no helper walk.
+function updateControl(p,b,g) {
+ return member(g) && controlShape(p,g) && p.controlRevision==b.controlRevision+1
+  && (p.action=='BEGIN'?begin(p,b,g)
+    :p.action=='CHECK'?prepare(p,b,g)
+    :p.action=='POST'?post(p,b,g)
+    :p.action=='FINISH'?finish(p,b,g)
+    :p.action=='CANCEL'?cancel(p,b,g)
+    :p.action=='JOIN' && join(p,b,g))
+  && (p.readPad==0 || reads(p.readPad)) && (p.exprPad==0 || expressions(p));
+}
+match /groups/{g}/ledger/control {
+ allow get: if member(g);
+ allow create: if signedIn() && getAfter(/databases/$(database)/documents/groups/$(g)).data.creatorId==request.auth.uid
+  && request.resource.data==initial(g,getAfter(/databases/$(database)/documents/groups/$(g)).data.initialMemberIds.size());
+ allow update: if updateControl(request.resource.data,resource.data,g);
+}
+function accountShape(p,g,u) {
+ return p.keys().hasOnly(['groupId','uid','username','normalizedUsername','status','joinedAt','leftAt','netPaise','revision','lastOperationId','lastComponent'])
+  && p.groupId==g && p.uid==u && p.status=='ACTIVE' && p.joinedAt is timestamp && p.leftAt==null
+  && p.netPaise is int && p.netPaise>=-4000000000000000 && p.netPaise<=4000000000000000
+  && p.revision is int && p.revision>=0 && p.revision<=999999999 && p.lastOperationId is string && p.lastComponent is int;
+}
+function newAccount(p,g,u) {
+ let m=getAfter(/databases/$(database)/documents/groups/$(g)).data;
+ let c=getAfter(/databases/$(database)/documents/groups/$(g)/ledger/control).data;
+ return p==zero(g,u,get(/databases/$(database)/documents/publicIdentities/$(u)).data)
+  && (u in m.initialMemberIds?request.auth.uid==m.creatorId:(request.auth.uid==m.adminId && c.action=='JOIN' && c.target==u && c.controlRevision==control(g).controlRevision+1));
+}
+function accountPost(p,b,g,u) {
+ let c=control(g);
+ let a=getAfter(/databases/$(database)/documents/groups/$(g)/ledger/control).data;
+ let x=op(g,c.activeOperationId);
+ return c.phase=='APPLY' && pending(g,c,x) && a.action=='POST' && a.controlRevision==c.controlRevision+1 && a.cursor==c.cursor+1
+  && a.activeOperationId==c.activeOperationId && target(x,c.cursor)==u && p.netPaise==b.netPaise+delta(x,c.cursor)
+  && p.revision==b.revision+1 && p.lastOperationId==c.activeOperationId && p.lastComponent==c.cursor
+  && p.diff(b).affectedKeys().hasOnly(['netPaise','revision','lastOperationId','lastComponent']);
+}
+match /groups/{g}/accounts/{u} {
+ allow get: if signedIn() && (request.auth.uid==u || member(g));
+ allow create: if signedIn() && accountShape(request.resource.data,g,u) && newAccount(request.resource.data,g,u);
+ allow update: if signedIn() && accountShape(request.resource.data,g,u) && accountPost(request.resource.data,resource.data,g,u);
+}
+function operationStart(p,g,id) {
+ let b=control(g);
+ let c=getAfter(/databases/$(database)/documents/groups/$(g)/ledger/control).data;
+ return p.keys().hasOnly(['operationId','groupId','recordId','kind','actorId','expectedRevision','acceptedRevision','createdAt','status','before','after'])
+  && p.operationId==id && p.groupId==g && p.kind=='expense_create' && p.status=='PENDING' && p.before==null
+  && p.actorId==request.auth.uid && p.createdAt==request.time && p.expectedRevision==0 && p.acceptedRevision==c.controlRevision
+  && empty(b) && c.action=='BEGIN' && c.activeOperationId==id && c.controlRevision==b.controlRevision+1;
+}
+function terminal(p,b,g,id) {
+ let c=control(g);
+ let a=getAfter(/databases/$(database)/documents/groups/$(g)/ledger/control).data;
+ return b.status=='PENDING' && p.keys().hasOnly(['operationId','groupId','recordId','kind','actorId','expectedRevision','acceptedRevision','createdAt','status','finishedAt','resultRevision'])
+  && p.diff(b).affectedKeys().hasOnly(['status','before','after','finishedAt','resultRevision']) && p.finishedAt==request.time
+  && c.activeOperationId==id && a.controlRevision==c.controlRevision+1 && empty(a)
+  && (p.status=='COMMITTED'?(a.action=='FINISH' && p.resultRevision==1 && getAfter(/databases/$(database)/documents/groups/$(g)/records/$(b.recordId)).data.lastOperationId==id)
+   :(p.status=='CANCELLED' && a.action=='CANCEL' && p.resultRevision==0));
+}
+match /groups/{g}/operations/{id} {
+ allow get: if member(g);
+ allow create: if signedIn() && uuid(id) && operationStart(request.resource.data,g,id);
+ allow update: if signedIn() && terminal(request.resource.data,resource.data,g,id);
+}
+function publication(p,g,id) {
+ let b=control(g);
+ let a=getAfter(/databases/$(database)/documents/groups/$(g)/ledger/control).data;
+ let x=op(g,b.activeOperationId);
+ return b.phase=='APPLY' && pending(g,b,x) && x.recordId==id && p.groupId==g && p.recordId==id && p.revision==1
+  && b.checked==2*count(x) && b.cursor==count(x) && a.action=='FINISH' && empty(a) && a.controlRevision==b.controlRevision+1
+  && headMatches(p,x,a) && getAfter(/databases/$(database)/documents/groups/$(g)/operations/$(b.activeOperationId)).data.status=='COMMITTED';
+}
+match /groups/{g}/records/{id} {
+ allow get,list: if member(g);
+ allow create: if signedIn() && publication(request.resource.data,g,id);
+ allow update,delete: if false;
+}
+match /{path=**} { allow read,write: if false; }
+
+ }
+}

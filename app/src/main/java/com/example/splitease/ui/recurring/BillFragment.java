@@ -24,7 +24,7 @@ public final class BillFragment extends Fragment {
  private final List<String> groupIds=new ArrayList<>(),handlerIds=new ArrayList<>();
  @Override public View onCreateView(@NonNull LayoutInflater inflater,ViewGroup parent,Bundle saved){binding=FragmentBillBinding.inflate(inflater,parent,false);return binding.getRoot();}
  @Override public void onViewCreated(@NonNull View view,Bundle saved){
-  model=new ViewModelProvider(this).get(RecurringViewModel.class);String id=requireArguments().getString("billId");model.configure(id,id==null);ViewCompat.setAccessibilityHeading(binding.title,true);
+  model=new ViewModelProvider(this).get(RecurringViewModel.class);model.dependencies(com.example.splitease.debug.CloudGroups.dependencies(this));String id=requireArguments().getString("billId");model.configure(id,id==null);ViewCompat.setAccessibilityHeading(binding.title,true);if(model.cloud())binding.leadLayout.setVisibility(View.GONE);
   binding.back.setOnClickListener(v->NavHostFragment.findNavController(this).popBackStack());binding.refresh.setOnClickListener(v->model.refresh());binding.edit.setOnClickListener(v->model.edit());
   watch(binding.name,"title",false);watch(binding.amount,"amount",true);watch(binding.day,"day",false);watch(binding.lead,"lead",false);
   binding.active.setOnCheckedChangeListener((b,checked)->{if(!rendering)model.active(checked);});
@@ -56,7 +56,7 @@ public final class BillFragment extends Fragment {
    for(String id:participants){MaterialCheckBox box=new MaterialCheckBox(requireContext());box.setText(current.contains(id)?model.name(id):getString(R.string.expense_former,model.name(id)));box.setChecked(model.selected().contains(id));box.setEnabled(!state.busy);box.setOnCheckedChangeListener((v,checked)->{if(!rendering)model.select(id,checked);});binding.participants.addView(box);}
    binding.shares.setText(model.preview());binding.save.setEnabled(!state.busy&&group!=null);
    boolean invalid=bill!=null&&(!current.containsAll(bill.participantIds)||bill.handlerId!=null&&!current.contains(bill.handlerId));binding.needsMembers.setVisibility(invalid&&bill.active?View.VISIBLE:View.GONE);
-   binding.current.removeAllViews();binding.history.removeAllViews();List<RecurringBillCycle> history=bill==null?Collections.emptyList():state.data.cycles.get(bill.id);int month=RecurringSchedule.month(System.currentTimeMillis()),old=0;boolean found=false;
+   binding.current.removeAllViews();binding.history.removeAllViews();List<RecurringBillCycle> history=bill==null?Collections.emptyList():state.data.cycles.getOrDefault(bill.id,Collections.emptyList());int month=RecurringSchedule.month(System.currentTimeMillis()),old=0;boolean found=false;
    for(RecurringBillCycle cycle:history){boolean now=cycle.year*12+cycle.month-1==month;if(now)found=true;else old++;cycle(now?binding.current:binding.history,cycle,state.busy);}
    binding.currentLabel.setVisibility(bill==null?View.GONE:View.VISIBLE);binding.noCurrent.setVisibility(bill!=null&&!found?View.VISIBLE:View.GONE);binding.historyLabel.setVisibility(bill==null?View.GONE:View.VISIBLE);binding.noCycles.setVisibility(bill!=null&&old==0?View.VISIBLE:View.GONE);
   }
