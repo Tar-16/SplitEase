@@ -26,6 +26,8 @@
             <TextView android:id="@+id/preview_heading" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_preview_title" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle"/>
             <TextView android:id="@+id/shares" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/expense_preview_hint" android:textAppearance="@style/TextAppearance.SplitEase.Body"/>
             <TextView android:id="@+id/receipt_heading" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:text="@string/receipt_title" android:textAppearance="@style/TextAppearance.SplitEase.CardTitle"/>
+            <TextView android:id="@+id/receipt_device_only" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/receipt_device_only" android:textAppearance="@style/TextAppearance.SplitEase.Body" android:visibility="gone"/>
             <com.example.splitease.ui.widget.GlassCardView android:id="@+id/receipt_detected_result" style="@style/Widget.SplitEase.Card" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:visibility="gone">
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="20dp">
                     <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/receipt_detected_label" android:textAppearance="@style/TextAppearance.Material3.LabelLarge" android:textColor="@color/text_secondary"/>

@@ -10,6 +10,7 @@ public final class GroupDependencies {
     public final com.example.splitease.repository.ExpenseRepository expenses;
     public final com.example.splitease.repository.SettlementRepository settlements;
     public final com.example.splitease.repository.RecurringBillRepository recurring;
+    public final com.example.splitease.repository.ReceiptStorageRepository receipts;
     public GroupDependencies(AuthService auth,GroupRepository groups){        this(auth,groups,null);
     }
     public GroupDependencies(AuthService auth,GroupRepository groups,com.example.splitease.repository.ExpenseRepository expenses){
@@ -20,6 +21,12 @@ public final class GroupDependencies {
     }
     public GroupDependencies(AuthService auth,GroupRepository groups,com.example.splitease.repository.ExpenseRepository expenses,
             com.example.splitease.repository.SettlementRepository settlements,com.example.splitease.repository.RecurringBillRepository recurring){
+        this(auth,groups,expenses,settlements,recurring,null);
+    }
+    public GroupDependencies(AuthService auth,GroupRepository groups,com.example.splitease.repository.ExpenseRepository expenses,
+            com.example.splitease.repository.SettlementRepository settlements,com.example.splitease.repository.RecurringBillRepository recurring,
+            com.example.splitease.repository.ReceiptStorageRepository receipts){
+        this.receipts=receipts;
         this.auth=auth;this.groups=groups;this.expenses=expenses;this.settlements=settlements;this.recurring=recurring;
     }
 }

@@ -44,6 +44,7 @@ public final class ExpenseFragment extends Fragment {
         }).get(ExpenseViewModel.class);
         model.configure(requireArguments().getString("groupId"),requireArguments().getString("expenseId"));
         ViewCompat.setAccessibilityHeading(binding.heading,true);ViewCompat.setAccessibilityHeading(binding.receiptHeading,true);binding.receiptMessage.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        binding.receiptDeviceOnly.setVisibility(model.cloud()&&model.receiptsAvailable()?View.VISIBLE:View.GONE);
         binding.error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         binding.back.setOnClickListener(v -> back()); binding.retry.setOnClickListener(v -> model.refresh());
         watch(binding.expenseDescription,"description");watch(binding.expenseTitle,"title"); watch(binding.expenseAmount,"amount");
@@ -123,9 +124,12 @@ public final class ExpenseFragment extends Fragment {
                 binding.receiptCancelCapture.setVisibility(state.capturePending?View.VISIBLE:View.GONE);
                 preview();
             }
-            if(model.cloud())for(View receiptView:Arrays.asList(binding.receiptHeading,binding.receiptDetectedResult,binding.receiptMessage,binding.receiptDebugToggle,binding.receiptDebug,binding.receiptPreview,binding.scanReceipt,binding.receiptCameraSettings,binding.receiptCancelCapture,binding.receiptView,binding.receiptRemove,binding.receiptRetry))receiptView.setVisibility(View.GONE);
+            if(!model.receiptsAvailable())for(View receiptView:Arrays.asList(binding.receiptHeading,binding.receiptDetectedResult,binding.receiptMessage,binding.receiptDebugToggle,binding.receiptDebug,binding.receiptPreview,binding.scanReceipt,binding.receiptCameraSettings,binding.receiptCancelCapture,binding.receiptView,binding.receiptRemove,binding.receiptRetry))receiptView.setVisibility(View.GONE);
             rendering=false;launchCapture();
-            if(state.done && isResumed()) { model.consumeDone(); back(); }
+            if(state.done && isResumed()) {
+                if(state.receiptLinkFailed)Toast.makeText(requireContext(),R.string.receipt_device_link_failed,Toast.LENGTH_LONG).show();
+                model.consumeDone(); back();
+            }
         });
     }
     private void watch(EditText field,String key) {

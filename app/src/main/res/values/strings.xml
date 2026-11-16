@@ -56,4 +56,6 @@
     <string name="group_confirm">Confirm</string>
     <string name="group_cancel">Cancel</string>
     <string name="cloud_bill_no_reminders">Cloud bills sync here when online. Device reminders are available for local bills only.</string>
+    <string name="receipt_device_only">Receipts are saved on this device for your account only. Group members cannot see them, and they do not sync.</string>
+    <string name="receipt_device_link_failed">Expense saved. The receipt change could not be confirmed on this device.</string>
 </resources>
