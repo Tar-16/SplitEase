@@ -1,12 +1,12 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
   <string name="receipt_title">Receipt</string>
-  <string name="receipt_scan">Scan Receipt</string>
-  <string name="receipt_retake">Retake / replace receipt</string>
+  <string name="receipt_scan">Add bill photo</string>
+  <string name="receipt_retake">Add another bill photo</string>
   <string name="receipt_view">View receipt</string>
   <string name="receipt_remove">Remove receipt</string>
   <string name="receipt_remove_confirm">Remove this receipt when you save the expense? The existing image remains attached until Save succeeds.</string>
-  <string name="receipt_hint">Optional: scan a receipt, review its image and choose whether to use the detected total. Scanning never saves an expense.</string>
+  <string name="receipt_hint">Optional: add photos of one or more bills. A detected amount only fills that bill\'s own field; scanning never changes the expense amount or saves anything.</string>
   <string name="receipt_review">Review the receipt and expense amount. Attachment changes take effect only when you save the expense.</string>
   <string name="receipt_detected_label">Detected amount</string>
   <string name="receipt_detected">Please check the receipt before using this amount.</string>
@@ -31,4 +31,25 @@
   <string name="receipt_evidence_high">Strong supporting evidence · %1$s</string>
   <string name="receipt_evidence_review">Review carefully · %1$s</string>
   <string name="receipt_debug_details">OCR details (debug only)</string>
+  <string name="bills_title">Bills</string>
+  <string name="bill_add">Add bill photo</string>
+  <string name="bill_view">View</string>
+  <string name="bill_remove">Remove</string>
+  <string name="bill_remove_action">Remove bill</string>
+  <string name="bill_remove_confirm">Remove this bill when you save the expense? The attached image stays until Save succeeds.</string>
+  <string name="bill_row_title">Bill %1$d</string>
+  <string name="bill_amount_hint">Amount (INR)</string>
+  <string name="bill_amount_invalid">A bill amount is not valid. Use rupees with up to two decimals, or leave it blank.</string>
+  <string name="bill_limit">You can attach up to 10 bills to one expense.</string>
+  <string name="bills_total_label">Total of bills on this expense</string>
+  <plurals name="bills_with_amount"><item quantity="one">%1$d bill with an amount</item><item quantity="other">All %1$d bills have an amount</item></plurals>
+  <string name="bills_total_none">No amounts yet</string>
+  <string name="bills_total_none_note">Enter the amount printed on each bill to see their total.</string>
+  <string name="bills_total_applied">Expense amount set to the total of the bills</string>
+  <string name="bills_total_note_some">%1$d of %2$d bills have an amount; the others are not counted.</string>
+  <string name="bills_use_total">Use as expense amount</string>
+  <string name="bills_group_label">Bills in this group</string>
+  <plurals name="bills_group_value"><item quantity="one">%1$s across %2$d bill</item><item quantity="other">%1$s across %2$d bills</item></plurals>
+  <string name="bills_group_missing">%1$d without an amount are not counted.</string>
+  <string name="bill_replace">Replace bill photo</string>
 </resources>

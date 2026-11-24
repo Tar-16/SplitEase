@@ -253,8 +253,12 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
                 c -> new MemberIdentity(c.getString(0),c.getString(1)),value.id)) {
             if(needed.contains(identity.id)) names.put(identity.id,identity.username);
         }
+        long billTotal=0;int billCount=0,billsWithoutAmount=0;
+        for(ReceiptMetadata bill:query("SELECT * FROM receipts WHERE group_id=? AND expense_id IS NOT NULL",this::receipt,value.id)) {
+            billCount++;if(bill.amountPaise==null)billsWithoutAmount++;else billTotal=Math.addExact(billTotal,bill.amountPaise);
+        }
         return new GroupDetails(value,members,includeEligibility && !value.adminId.equals(actorId) && balances.getOrDefault(actorId,0L)==0L,
-                expenses,balances,names,ExpenseAmounts.total(expenses));
+                expenses,balances,names,ExpenseAmounts.total(expenses),true,true,billCount,billsWithoutAmount,billTotal);
     }
     @Override public ObservableQuery<List<GroupDetails>> observeGroupSummaries(String actorId) {
         return observe(() -> {
@@ -350,7 +354,8 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
             for (ExpenseSplit split : value.splits) insert("expense_splits",values("expense_id",value.id,"group_id",value.groupId,"user_id",split.userId,"share_paise",split.sharePaise));
             balance(value.groupId); // Fail atomically on long overflow rather than persist unusable balances.
             ExpenseAmounts.total(expenses(value.groupId)); // Group totals must also remain representable.
-            if(change.kind!=ReceiptChange.Kind.KEEP) {
+            if(change.kind==ReceiptChange.Kind.EDIT) applyBillEdit(actorId,value,change);
+            else if(change.kind!=ReceiptChange.Kind.KEEP) {
                 ReceiptMetadata replacement=null;
                 if(change.kind==ReceiptChange.Kind.REPLACE) {
                     replacement=receipt(change.draftId);authorizeReceipt(actorId,replacement);
@@ -367,7 +372,26 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
     @Override public void deleteExpense(String actorId, String expenseId, Executor executor, RepositoryCallback<Boolean> callback) {
         submit(true, () -> { Expense value=expense(expenseId); member(value.groupId,actorId); db().delete("expenses","id=?",new String[]{expenseId}); balance(value.groupId); return true; },executor,callback);
     }
-    private ReceiptMetadata receipt(Cursor c) {return new ReceiptMetadata(str(c,"id"),str(c,"group_id"),str(c,"expense_id"),(int)num(c,"width"),(int)num(c,"height"),num(c,"byte_count"),num(c,"created_at"));}
+    private ReceiptMetadata receipt(Cursor c) {int amount=c.getColumnIndexOrThrow("amount_paise");return new ReceiptMetadata(str(c,"id"),str(c,"group_id"),str(c,"expense_id"),(int)num(c,"width"),(int)num(c,"height"),num(c,"byte_count"),num(c,"created_at"),c.isNull(amount)?null:Long.valueOf(c.getLong(amount)));}
+    /** Runs inside the expense transaction: any failure rolls back the expense and every bill change together. */
+    private void applyBillEdit(String actorId,Expense value,ReceiptChange change)throws java.io.IOException {
+        for(String id:change.removals) {
+            if(db().delete("receipts","id=? AND expense_id=? AND group_id=?",new String[]{id,value.id,value.groupId})!=1)throw new SecurityException("Bill is not attached to this expense");
+        }
+        for(Map.Entry<String,Long> entry:change.amounts.entrySet()) {
+            ContentValues amount=new ContentValues();if(entry.getValue()==null)amount.putNull("amount_paise");else amount.put("amount_paise",entry.getValue());
+            if(db().update("receipts",amount,"id=? AND expense_id=? AND group_id=?",new String[]{entry.getKey(),value.id,value.groupId})!=1)throw new SecurityException("Bill is not attached to this expense");
+        }
+        for(ReceiptChange.Addition addition:change.additions) {
+            ReceiptMetadata draft=receipt(addition.draftId);authorizeReceipt(actorId,draft);
+            String owner=one("SELECT owner_id FROM receipts WHERE id=?",c->c.getString(0),draft.id);
+            if(!owner.equals(actorId)||draft.expenseId!=null||!draft.groupId.equals(value.groupId))throw new SecurityException("Draft not available");
+            receiptFiles.read(draft.id);
+            ContentValues link=values("expense_id",value.id);if(addition.amountPaise==null)link.putNull("amount_paise");else link.put("amount_paise",addition.amountPaise);
+            update("receipts",draft.id,link);
+        }
+        if(one("SELECT COUNT(*) FROM receipts WHERE expense_id=?",c->c.getLong(0),value.id)>ReceiptChange.MAX_PER_EXPENSE)throw new IllegalArgumentException("Too many bills");
+    }
     private ReceiptMetadata receipt(String id) {return one("SELECT * FROM receipts WHERE id=?",this::receipt,Rules.id(id));}
     private void authorizeReceipt(String actor,ReceiptMetadata metadata) {
         member(metadata.groupId,actor);
@@ -386,7 +410,10 @@ public final class SqliteRepositories implements UserRepository, GroupRepository
         submit(false,()->{ReceiptMetadata metadata=receipt(id);authorizeReceipt(actor,metadata);byte[] bytes=receiptFiles.read(id);if(bytes.length!=metadata.byteCount)throw new java.io.IOException("Receipt unavailable");return new ReceiptImage(metadata,bytes);},executor,callback);
     }
     @Override public void findForExpense(String actor,String expenseId,Executor executor,RepositoryCallback<Optional<ReceiptMetadata>> callback) {
-        submit(false,()->{Expense value=expense(expenseId);member(value.groupId,actor);List<ReceiptMetadata> list=query("SELECT * FROM receipts WHERE expense_id=?",this::receipt,expenseId);return list.isEmpty()?Optional.empty():Optional.of(list.get(0));},executor,callback);
+        submit(false,()->{Expense value=expense(expenseId);member(value.groupId,actor);List<ReceiptMetadata> list=query("SELECT * FROM receipts WHERE expense_id=? ORDER BY created_at,id",this::receipt,expenseId);return list.isEmpty()?Optional.empty():Optional.of(list.get(0));},executor,callback);
+    }
+    @Override public void findAllForExpense(String actor,String expenseId,Executor executor,RepositoryCallback<List<ReceiptMetadata>> callback) {
+        submit(false,()->{Expense value=expense(expenseId);member(value.groupId,actor);return query("SELECT * FROM receipts WHERE expense_id=? ORDER BY created_at,id",this::receipt,expenseId);},executor,callback);
     }
     @Override public void discardDraft(String actor,String id,Executor executor,RepositoryCallback<Boolean> callback) {
         submit(true,()->{ReceiptMetadata value=receipt(id);authorizeReceipt(actor,value);if(value.expenseId!=null)throw new IllegalStateException("Use an expense receipt mutation");return db().delete("receipts","id=?",new String[]{id})==1;},executor,callback);

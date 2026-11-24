@@ -4,9 +4,9 @@ import android.content.Context;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
-/** Additive migrations: v1 accounting, v2 recurring bills, v3 original creator attribution, v4 recurring cursors/receipts. */
+/** Additive migrations: v1 accounting, v2 recurring bills, v3 original creator attribution, v4 recurring cursors, v5 receipt metadata, v6 several bills per expense with optional amounts. */
 public final class SplitEaseDatabase extends SQLiteOpenHelper {
-    public static final int VERSION = 5;
+    public static final int VERSION = 6;
     public SplitEaseDatabase(Context context) { this(context, "splitease.db", VERSION); }
     public SplitEaseDatabase(Context context, String name) { this(context, name, VERSION); }
     // Package-visible version selection permits a real v1 -> v2 migration test.
@@ -21,6 +21,7 @@ public final class SplitEaseDatabase extends SQLiteOpenHelper {
         if (targetVersion >= 3) addCreator(db);
         if (targetVersion >= 4) addRecurringSchedule(db);
         if (targetVersion >= 5) addReceipts(db);
+        if (targetVersion >= 6) addBillAmounts(db);
     }
     private final int targetVersion;
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
@@ -30,6 +31,7 @@ public final class SplitEaseDatabase extends SQLiteOpenHelper {
         if (oldVersion < 3 && newVersion >= 3) addCreator(db);
         if (oldVersion < 4 && newVersion >= 4) addRecurringSchedule(db);
         if (oldVersion < 5 && newVersion >= 5) addReceipts(db);
+        if (oldVersion < 6 && newVersion >= 6) addBillAmounts(db);
     }
     @Override public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         throw new IllegalStateException("Database downgrade would risk data loss");
@@ -37,6 +39,16 @@ public final class SplitEaseDatabase extends SQLiteOpenHelper {
     private static void addReceipts(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE receipts (id TEXT PRIMARY KEY NOT NULL,group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,expense_id TEXT UNIQUE,owner_id TEXT NOT NULL REFERENCES users(id),width INTEGER NOT NULL CHECK(width>0),height INTEGER NOT NULL CHECK(height>0),byte_count INTEGER NOT NULL CHECK(byte_count>0),created_at INTEGER NOT NULL CHECK(created_at>=0),FOREIGN KEY(expense_id,group_id) REFERENCES expenses(id,group_id) ON DELETE CASCADE)");
         db.execSQL("CREATE INDEX receipts_drafts ON receipts(expense_id,created_at)");
+    }
+    /** SQLite cannot drop the v5 UNIQUE(expense_id), so rebuild the table inside the upgrade transaction and copy every row. */
+    private static void addBillAmounts(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE receipts_v6 (id TEXT PRIMARY KEY NOT NULL,group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,expense_id TEXT,owner_id TEXT NOT NULL REFERENCES users(id),width INTEGER NOT NULL CHECK(width>0),height INTEGER NOT NULL CHECK(height>0),byte_count INTEGER NOT NULL CHECK(byte_count>0),created_at INTEGER NOT NULL CHECK(created_at>=0),amount_paise INTEGER CHECK(amount_paise IS NULL OR (typeof(amount_paise)='integer' AND amount_paise>0)),FOREIGN KEY(expense_id,group_id) REFERENCES expenses(id,group_id) ON DELETE CASCADE)");
+        db.execSQL("INSERT INTO receipts_v6(id,group_id,expense_id,owner_id,width,height,byte_count,created_at) SELECT id,group_id,expense_id,owner_id,width,height,byte_count,created_at FROM receipts");
+        db.execSQL("DROP INDEX receipts_drafts");
+        db.execSQL("DROP TABLE receipts");
+        db.execSQL("ALTER TABLE receipts_v6 RENAME TO receipts");
+        db.execSQL("CREATE INDEX receipts_drafts ON receipts(expense_id,created_at)");
+        db.execSQL("CREATE INDEX receipts_group ON receipts(group_id)");
     }
     private static void addRecurringSchedule(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE recurring_schedule (bill_id TEXT PRIMARY KEY NOT NULL REFERENCES recurring_bills(id) ON DELETE CASCADE, next_month INTEGER NOT NULL)");

@@ -51,6 +51,13 @@ public final class GroupDetailFragment extends GroupScreenFragment {
                 GroupDetails detail=state.detail; boolean admin=detail.group.adminId.equals(state.actorId);
                 binding.title.setText(detail.group.name);
                 binding.total.setVisibility(detail.accountingAvailable?View.VISIBLE:View.GONE);binding.yourBalance.setVisibility(detail.accountingAvailable?View.VISIBLE:View.GONE);
+                binding.billsTotal.setVisibility(detail.billCount>0?View.VISIBLE:View.GONE);
+                if(detail.billCount>0) {
+                    int counted=detail.billCount-detail.billsWithoutAmount;
+                    String value=counted>0?InrFormatter.format(detail.billsTotalPaise):getString(R.string.bills_total_none);
+                    String bills=getString(R.string.bills_group_label)+": "+getResources().getQuantityString(R.plurals.bills_group_value,detail.billCount,value,detail.billCount);
+                    binding.billsTotal.setText(detail.billsWithoutAmount>0?bills+" "+getString(R.string.bills_group_missing,detail.billsWithoutAmount):bills);
+                }
                 if(detail.accountingAvailable)binding.total.setText(getString(R.string.expense_total,InrFormatter.format(detail.totalExpenses)));
                 if(detail.accountingAvailable)binding.yourBalance.setText(getString(R.string.expense_your_balance,ExpenseUi.balance(requireContext(),detail.balances.getOrDefault(state.actorId,0L),true)));
                 renderAccounting(detail,state.actorId);
