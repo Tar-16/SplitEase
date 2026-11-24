@@ -312,6 +312,28 @@ public class SqliteRepositoriesTest {
         ReceiptMetadata third=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,first,callbacks,cb));await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,expense(id,200),ReceiptChange.replace(third.id),callbacks,cb));
         await((RepositoryCallback<Boolean> cb)->repo.deleteExpense(b,id,callbacks,cb));assertFalse(new ReceiptFiles(context,name).file(third.id).exists());assertThrows(ExecutionException.class,()->await((RepositoryCallback<ReceiptImage> cb)->repo.load(a,third.id,callbacks,cb)));
     }
+    @Test public void multipleBillsKeepPerBillAmountsGroupTotalsAndRejectInvalidEdits() throws Exception {
+        seed();String id=UUID.randomUUID().toString();
+        ReceiptMetadata one=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,receiptJpeg(android.graphics.Color.WHITE),callbacks,cb));
+        ReceiptMetadata two=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(a,group,receiptJpeg(android.graphics.Color.LTGRAY),callbacks,cb));
+        ReceiptMetadata three=await((RepositoryCallback<ReceiptMetadata> cb)->repo.stage(b,group,receiptJpeg(android.graphics.Color.GRAY),callbacks,cb));
+        ReceiptChange add=ReceiptChange.edit(Arrays.asList(new ReceiptChange.Addition(one.id,12345L),new ReceiptChange.Addition(two.id,null)),Collections.<String>emptySet(),Collections.<String,Long>emptyMap());
+        await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,expense(id,20000),add,callbacks,cb));
+        List<ReceiptMetadata> saved=await((RepositoryCallback<List<ReceiptMetadata>> cb)->repo.findAllForExpense(b,id,callbacks,cb));assertEquals(2,saved.size());
+        GroupDetails detail=snapshot(repo.observeGroupDetails(a,group));assertEquals(2,detail.billCount);assertEquals(1,detail.billsWithoutAmount);assertEquals(12345L,detail.billsTotalPaise);
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<List<ReceiptMetadata>> cb)->repo.findAllForExpense(outsider,id,callbacks,cb)));
+        // Unknown removal id rolls the whole save back, including the amount change and new link.
+        ReceiptChange bad=ReceiptChange.edit(Arrays.asList(new ReceiptChange.Addition(three.id,500L)),Collections.singleton(UUID.randomUUID().toString()),Collections.<String,Long>emptyMap());
+        assertThrows(ExecutionException.class,()->await((RepositoryCallback<Expense> cb)->repo.saveExpense(a,expense(id,30000),bad,callbacks,cb)));
+        assertEquals(2,await((RepositoryCallback<List<ReceiptMetadata>> cb)->repo.findAllForExpense(a,id,callbacks,cb)).size());
+        assertEquals(20000,snapshot(repo.observeExpenses(group)).get(0).amountPaise);
+        // Amount edits and removal commit together.
+        ReceiptChange edit=ReceiptChange.edit(Arrays.asList(new ReceiptChange.Addition(three.id,700L)),Collections.singleton(one.id),Collections.singletonMap(two.id,300L));
+        await((RepositoryCallback<Expense> cb)->repo.saveExpense(b,expense(id,30000),edit,callbacks,cb));
+        List<ReceiptMetadata> after=await((RepositoryCallback<List<ReceiptMetadata>> cb)->repo.findAllForExpense(a,id,callbacks,cb));assertEquals(2,after.size());
+        detail=snapshot(repo.observeGroupDetails(a,group));assertEquals(2,detail.billCount);assertEquals(0,detail.billsWithoutAmount);assertEquals(1000L,detail.billsTotalPaise);
+        assertFalse(new ReceiptFiles(context,name).file(one.id).exists());
+    }
     @Test public void receiptHistoricalAccessMissingFilesAndRollbackOrphansRecoverSafely() throws Exception {
         seed();byte[] jpeg=receiptJpeg(android.graphics.Color.WHITE);String id=UUID.randomUUID().toString();
         Expense historical=new Expense(id,group,"Historical receipt",100,b,a,"Other",200,Arrays.asList(new ExpenseSplit(id,b,100)));
@@ -340,7 +362,7 @@ public class SqliteRepositoriesTest {
         try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration,4)){SQLiteDatabase db=helper.getWritableDatabase();db.execSQL("INSERT INTO users VALUES (?,?,?,NULL,X'01',X'02','test',1,1,1)",new Object[]{a,"Original","original@example.com"});db.execSQL("INSERT INTO groups(id,name,type,admin_id,created_at,creator_id) VALUES (?,?,?,?,?,?)",new Object[]{g,"Original group","FLAT",a,100,a});db.execSQL("INSERT INTO group_members VALUES (?,?,'ACTIVE',100,NULL)",new Object[]{g,a});
             db.execSQL("INSERT INTO expenses VALUES (?,?,?,12345,?,?,?,100)",new Object[]{expense,g,"Original expense",a,a,"Other"});db.execSQL("INSERT INTO expense_splits VALUES (?,?,?,12345)",new Object[]{expense,g,a});
             db.execSQL("INSERT INTO recurring_bills VALUES (?,?,?,99900,31,?,3,1)",new Object[]{bill,g,"WiFi",a});db.execSQL("INSERT INTO recurring_cycles VALUES (?,?,?,2026,2,?,99900,?)",new Object[]{cycle,bill,g,Rules.dueDate(2026,2,28),a});db.execSQL("INSERT INTO recurring_contributions VALUES (?,?,?,99900,1)",new Object[]{cycle,g,a});}
-        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration)){SQLiteDatabase db=helper.getWritableDatabase();assertEquals(5,db.getVersion());assertEquals(1,count(db,"expenses"));assertEquals(1,count(db,"expense_splits"));assertEquals(1,count(db,"recurring_cycles"));assertEquals(0,count(db,"receipts"));try(Cursor c=db.rawQuery("SELECT amount_paise FROM expenses",null)){assertTrue(c.moveToFirst());assertEquals(12345,c.getLong(0));}try(Cursor c=db.rawQuery("SELECT paid FROM recurring_contributions",null)){assertTrue(c.moveToFirst());assertEquals(1,c.getInt(0));}}
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration)){SQLiteDatabase db=helper.getWritableDatabase();assertEquals(6,db.getVersion());assertEquals(1,count(db,"expenses"));assertEquals(1,count(db,"expense_splits"));assertEquals(1,count(db,"recurring_cycles"));assertEquals(0,count(db,"receipts"));try(Cursor c=db.rawQuery("SELECT amount_paise FROM expenses",null)){assertTrue(c.moveToFirst());assertEquals(12345,c.getLong(0));}try(Cursor c=db.rawQuery("SELECT paid FROM recurring_contributions",null)){assertTrue(c.moveToFirst());assertEquals(1,c.getInt(0));}}
         context.deleteDatabase(migration);
     }
     @Test public void recurringBackfillSnapshotsPauseAndReactivationAreTransactional() throws Exception {
@@ -404,7 +426,7 @@ public class SqliteRepositoriesTest {
             db.execSQL("INSERT INTO recurring_cycles VALUES (?,?,?,2026,2,?,100,?)",new Object[]{cycle,bill,group,Rules.dueDate(2026,2,28),a});
             db.execSQL("INSERT INTO recurring_contributions VALUES (?,?,?,100,1)",new Object[]{cycle,group,a});
         }
-        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration)) {SQLiteDatabase db=helper.getWritableDatabase();assertEquals(5,db.getVersion());assertEquals(1,count(db,"recurring_cycles"));assertEquals(1,count(db,"recurring_schedule"));assertEquals(0,count(db,"recurring_reminders"));try(Cursor c=db.rawQuery("SELECT paid FROM recurring_contributions",null)){assertTrue(c.moveToFirst());assertEquals(1,c.getInt(0));}}
+        try(SplitEaseDatabase helper=new SplitEaseDatabase(context,migration)) {SQLiteDatabase db=helper.getWritableDatabase();assertEquals(6,db.getVersion());assertEquals(1,count(db,"recurring_cycles"));assertEquals(1,count(db,"recurring_schedule"));assertEquals(0,count(db,"recurring_reminders"));try(Cursor c=db.rawQuery("SELECT paid FROM recurring_contributions",null)){assertTrue(c.moveToFirst());assertEquals(1,c.getInt(0));}}
         context.deleteDatabase(migration);
     }
     @Test public void recurringSnapshotsRemainSeparateAndUnique() throws Exception {
@@ -430,6 +452,28 @@ public class SqliteRepositoriesTest {
         await((RepositoryCallback<Boolean> c) -> repo.setContributionPaid(b,first.id,a,false,callbacks,c));
         assertFalse(snapshot(repo.observeCycles(id)).get(0).contributions.get(0).paid);
     }
+    @Test public void v6MigrationKeepsReceiptsAndAllowsSeveralBillsPerExpense() throws Exception {
+        String migrationName="migration-"+UUID.randomUUID()+".db";String groupId=UUID.randomUUID().toString(),expenseId=UUID.randomUUID().toString(),r1=UUID.randomUUID().toString(),r2=UUID.randomUUID().toString();
+        try(SplitEaseDatabase old=new SplitEaseDatabase(context,migrationName,5)) {
+            SQLiteDatabase db=old.getWritableDatabase();
+            db.execSQL("INSERT INTO users VALUES(?,?,?,NULL,?,?,?,2,19456,1)",new Object[]{a,"alice","alice@example.com",new byte[32],new byte[16],"argon2id-v19"});
+            db.execSQL("INSERT INTO groups(id,name,type,admin_id,created_at,creator_id) VALUES(?,?,'FLAT',?,100,?)",new Object[]{groupId,"Preserved",a,a});
+            db.execSQL("INSERT INTO group_members(group_id,user_id,status,joined_at) VALUES(?,?,'ACTIVE',100)",new Object[]{groupId,a});
+            db.execSQL("INSERT INTO expenses(id,group_id,title,amount_paise,payer_id,creator_id,category,expense_date) VALUES(?,?,'Dinner',1000,?,?,'Food',200)",new Object[]{expenseId,groupId,a,a});
+            db.execSQL("INSERT INTO receipts(id,group_id,expense_id,owner_id,width,height,byte_count,created_at) VALUES(?,?,?,?,10,20,30,40)",new Object[]{r1,groupId,expenseId,a});
+            assertEquals(5,db.getVersion());
+            assertThrows(SQLiteException.class,()->db.execSQL("INSERT INTO receipts(id,group_id,expense_id,owner_id,width,height,byte_count,created_at) VALUES(?,?,?,?,10,20,30,41)",new Object[]{r2,groupId,expenseId,a}));
+        }
+        try(SplitEaseDatabase upgraded=new SplitEaseDatabase(context,migrationName)) {
+            SQLiteDatabase db=upgraded.getWritableDatabase();
+            assertEquals(6,db.getVersion());assertEquals(1,count(db,"receipts"));
+            try(Cursor c=db.rawQuery("SELECT expense_id,amount_paise,byte_count FROM receipts WHERE id=?",new String[]{r1})) {assertTrue(c.moveToFirst());assertEquals(expenseId,c.getString(0));assertTrue(c.isNull(1));assertEquals(30,c.getLong(2));}
+            db.execSQL("INSERT INTO receipts(id,group_id,expense_id,owner_id,width,height,byte_count,created_at,amount_paise) VALUES(?,?,?,?,10,20,30,41,500)",new Object[]{r2,groupId,expenseId,a});
+            assertEquals(2,count(db,"receipts"));
+            assertThrows(SQLiteException.class,()->db.execSQL("UPDATE receipts SET amount_paise=0 WHERE id=?",new Object[]{r2}));
+            try(Cursor c=db.rawQuery("PRAGMA foreign_key_check",null)) {assertEquals(0,c.getCount());}
+        }
+    }
     @Test public void migrationPreservesCoreDataAndRejectsDowngrade() throws Exception {
         String migrationName="migration-"+UUID.randomUUID()+".db";
         try(SplitEaseDatabase old=new SplitEaseDatabase(context,migrationName,1)) {
@@ -441,7 +485,7 @@ public class SqliteRepositoriesTest {
         }
         try(SplitEaseDatabase upgraded=new SplitEaseDatabase(context,migrationName)) {
             SQLiteDatabase db=upgraded.getWritableDatabase();
-            assertEquals(5,db.getVersion()); assertEquals(1,count(db,"users")); assertEquals(1,count(db,"groups")); assertEquals(0,count(db,"recurring_cycles"));
+            assertEquals(6,db.getVersion()); assertEquals(1,count(db,"users")); assertEquals(1,count(db,"groups")); assertEquals(0,count(db,"recurring_cycles"));
             try(Cursor creator=db.rawQuery("SELECT creator_id FROM groups",null)) { assertTrue(creator.moveToFirst()); assertEquals(a,creator.getString(0)); }
             try(Cursor c=db.rawQuery("PRAGMA foreign_key_check",null)) { assertEquals(0,c.getCount()); }
         }

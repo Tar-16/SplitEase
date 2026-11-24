@@ -14,6 +14,9 @@ public final class GroupDetails {
     /** False means financial values are unavailable and must never be displayed/interpreted as zero. */
     public final boolean accountingAvailable;
     public final boolean expensesAvailable;
+    /** Bill photos linked to this group's expenses. billsTotalPaise sums only bills that have a confirmed amount. */
+    public final int billCount,billsWithoutAmount;
+    public final long billsTotalPaise;
 
     public GroupDetails(Group group, List<MemberIdentity> members, boolean canLeave,
             List<Expense> expenses, Map<String,Long> balances, Map<String,String> names, long totalExpenses) {
@@ -24,6 +27,10 @@ public final class GroupDetails {
         this(group,members,canLeave,expenses,balances,names,totalExpenses,accountingAvailable,accountingAvailable);
     }
     public GroupDetails(Group group,List<MemberIdentity> members,boolean canLeave,List<Expense> expenses,Map<String,Long> balances,Map<String,String> names,long totalExpenses,boolean accountingAvailable,boolean expensesAvailable){
+        this(group,members,canLeave,expenses,balances,names,totalExpenses,accountingAvailable,expensesAvailable,0,0,0L);
+    }
+    public GroupDetails(Group group,List<MemberIdentity> members,boolean canLeave,List<Expense> expenses,Map<String,Long> balances,Map<String,String> names,long totalExpenses,boolean accountingAvailable,boolean expensesAvailable,int billCount,int billsWithoutAmount,long billsTotalPaise){
+        this.billCount=billCount;this.billsWithoutAmount=billsWithoutAmount;this.billsTotalPaise=billsTotalPaise;
         this.expensesAvailable=expensesAvailable;
         this.accountingAvailable=accountingAvailable;
         this.group=group;
